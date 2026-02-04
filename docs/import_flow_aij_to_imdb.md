@@ -29,6 +29,9 @@ AIJの本番シートは別アプリが参照しているため列追加不可�
 * `notes`（任意）
 * `profileJa`（任意・長文OK）
 * `profileEn`（任意・長文OK）
+* `membersJa` / `membersEn`（任意）
+* `locationJa` / `locationEn`（任意）
+* `agencyJa` / `agencyEn`（任意）
 
 slug のルール：
 
@@ -47,10 +50,14 @@ slug のルール：
 | slug         | imd.groups.slug    | 小文字/数字/ハイフンのみ |
 | nameEnglish  | *将来追加*             |               |
 | nameReading  | *将来追加*             |               |
-| location     | *将来設計*             |               |
-| agency       | *将来設計*             |               |
+| locationJa   | imd.group_attributes (location/ja) |               |
+| locationEn   | imd.group_attributes (location/en) |               |
+| agencyJa     | imd.group_attributes (agency/ja)   |               |
+| agencyEn     | imd.group_attributes (agency/en)   |               |
 | profileJa    | imd.group_profiles (ja) | 長文OK          |
 | profileEn    | imd.group_profiles (en) | 長文OK          |
+| membersJa    | imd.group_attributes (members/ja)  |               |
+| membersEn    | imd.group_attributes (members/en)  |               |
 
 ### 3.2 external_ids
 
@@ -79,14 +86,14 @@ slug のルール：
 
 ### STEP 3：import_master.ts を実行
 
-* CSVを読み取り、各行を `imd.groups` / `imd.external_ids` / `imd.group_profiles` に upsert
+* CSVを読み取り、各行を `imd.groups` / `imd.external_ids` / `imd.group_profiles` / `imd.group_attributes` に upsert
 * 1〜数件の更新だけ行いたい場合は `importFlag` を使う
   * `importFlag` が空・`0` 以外の行だけ取り込み対象
   * 実行例：`IMPORT_FLAG_ONLY=1 npx tsx script/import_master.ts`
 
 ### STEP 4：Supabase 上で確認
 
-* `groups` / `external_ids` / `group_profiles` の内容を目視で確認
+* `groups` / `external_ids` / `group_profiles` / `group_attributes` の内容を目視で確認
 
 ### STEP 5：問題なければ600行のフルCSVで実行
 
@@ -104,6 +111,7 @@ slug のルール：
 ## 6. 将来拡張
 
 * group_profiles に履歴/公開状態などの拡張
+* group_attributes の key/locale 拡張
 * 事務所テーブル（imd.agencies）追加
 * メンバーテーブル（imd.members）追加
 * import_master.ts を差分更新対応にアップグレード

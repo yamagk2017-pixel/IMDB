@@ -15,6 +15,12 @@ type MasterRow = {
   members?: string;
   location?: string;
   agency?: string;
+  membersJa?: string;
+  membersEn?: string;
+  locationJa?: string;
+  locationEn?: string;
+  agencyJa?: string;
+  agencyEn?: string;
   profileJa?: string;
   profileEn?: string;
   youtubeLink?: string;
@@ -90,6 +96,12 @@ type ExternalRecord = {
 type ProfileRecord = {
   locale: "ja" | "en";
   body: string;
+};
+
+type AttributeRecord = {
+  key: "members" | "location" | "agency";
+  locale: "ja" | "en";
+  value: string;
 };
 
 function extractSpotifyId(value: string): string {
@@ -197,6 +209,40 @@ function buildProfileRecords(row: MasterRow): ProfileRecord[] {
   return result;
 }
 
+function buildAttributeRecords(row: MasterRow): AttributeRecord[] {
+  const result: AttributeRecord[] = [];
+
+  const pushIf = (
+    key: AttributeRecord["key"],
+    locale: AttributeRecord["locale"],
+    value?: string
+  ) => {
+    const v = value?.trim();
+    if (v) result.push({ key, locale, value: v });
+  };
+
+  // Preferred locale-specific columns
+  pushIf("members", "ja", row.membersJa);
+  pushIf("members", "en", row.membersEn);
+  pushIf("location", "ja", row.locationJa);
+  pushIf("location", "en", row.locationEn);
+  pushIf("agency", "ja", row.agencyJa);
+  pushIf("agency", "en", row.agencyEn);
+
+  // Backward compatibility: fall back to legacy columns (assumed English)
+  if (!row.membersJa && !row.membersEn) {
+    pushIf("members", "en", row.members);
+  }
+  if (!row.locationJa && !row.locationEn) {
+    pushIf("location", "en", row.location);
+  }
+  if (!row.agencyJa && !row.agencyEn) {
+    pushIf("agency", "en", row.agency);
+  }
+
+  return result;
+}
+
 async function main() {
   console.log("MASTER_profile.csv から IMDB へインポート開始");
 
@@ -294,6 +340,37 @@ async function main() {
       } else {
         console.log(
           `group_profiles upsert 成功 slug="${slug}" locale="${locale}"`
+        );
+      }
+    }
+
+    // 4. group_attributes を言語ごとに upsert
+    const attributes = buildAttributeRecords(row);
+
+    for (const attribute of attributes) {
+      const { key, locale, value } = attribute;
+
+      const { error: attrError } = await supabase
+        .from("group_attributes")
+        .upsert(
+          {
+            group_id: groupId,
+            key,
+            locale,
+            value,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "group_id,key,locale" }
+        );
+
+      if (attrError) {
+        console.error(
+          `group_attributes upsert 失敗 slug="${slug}" key="${key}" locale="${locale}"`,
+          attrError
+        );
+      } else {
+        console.log(
+          `group_attributes upsert 成功 slug="${slug}" key="${key}" locale="${locale}"`
         );
       }
     }
