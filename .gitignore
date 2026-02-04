@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Node/npm artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env & secrets
+.env
+.env.*
+.supabase
+
+# Supabase CLI generated files
+supabase/.branches
+supabase/.temp
+supabase/config.toml
+supabase/.env
+
+# Logs & caches
+*.log
+.tmp
+.cache/
