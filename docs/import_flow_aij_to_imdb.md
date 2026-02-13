@@ -70,6 +70,7 @@ slug のルール：
 | instagramLink | instagram       | handle             | 元URL        |
 | tiktokLink    | tiktok          | handle             | 元URL        |
 | calendarLink  | google_calendar | ID or null         | 元URL        |
+| ticketdiveLink | ticketdive     | null               | 元URL        |
 
 ---
 

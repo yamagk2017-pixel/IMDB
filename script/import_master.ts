@@ -30,6 +30,7 @@ type MasterRow = {
   instagramLink?: string;
   tiktokLink?: string;
   calendarLink?: string;
+  ticketdiveLink?: string;
   slug?: string;
   importFlag?: string;
 };
@@ -129,6 +130,28 @@ function extractHandleFromUrl(url: string): string | null {
   }
 }
 
+function extractTicketdiveArtistId(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  try {
+    const u = new URL(raw);
+    const parts = u.pathname.split("/").filter(Boolean);
+    const artistIdx = parts.findIndex((p) => p.toLowerCase() === "artist");
+
+    if (artistIdx >= 0 && parts[artistIdx + 1]) {
+      return parts[artistIdx + 1];
+    }
+    if (parts.length >= 1) {
+      return parts[parts.length - 1];
+    }
+    return null;
+  } catch {
+    // URLでない場合はID/slugそのものとして扱う
+    return raw.replace(/^@/, "") || null;
+  }
+}
+
 function buildExternalRecords(row: MasterRow): ExternalRecord[] {
   const result: ExternalRecord[] = [];
 
@@ -187,6 +210,15 @@ function buildExternalRecords(row: MasterRow): ExternalRecord[] {
       service: "schedule",
       external_id: null, // 必要なら ID 抽出ロジックを追加
       url: row.calendarLink,
+    });
+  }
+
+  if (row.ticketdiveLink) {
+    const ticketdiveId = extractTicketdiveArtistId(row.ticketdiveLink);
+    result.push({
+      service: "ticketdive",
+      external_id: ticketdiveId,
+      url: row.ticketdiveLink,
     });
   }
 
