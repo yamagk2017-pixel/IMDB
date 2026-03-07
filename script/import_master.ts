@@ -105,6 +105,10 @@ type AttributeRecord = {
   value: string;
 };
 
+type ExistingExternal = { service: string };
+type ExistingProfile = { locale: "ja" | "en" };
+type ExistingAttribute = { id: string; key: "members" | "location" | "agency"; locale: "ja" | "en" };
+
 function extractSpotifyId(value: string): string {
   // URL が入っている場合は最後のセグメントを ID とみなす
   if (value.includes("open.spotify.com")) {
@@ -275,11 +279,257 @@ function buildAttributeRecords(row: MasterRow): AttributeRecord[] {
   return result;
 }
 
+function hasNonEmptyCsvRows(rows: MasterRow[]): boolean {
+  return rows.some((row) => {
+    const slug = normalizeSlug(row.slug);
+    return !!slug && !!row.nameJapanese?.trim();
+  });
+}
+
+async function deactivateMissingGroups(
+  activeCsvSlugs: Set<string>,
+  runAtIso: string
+): Promise<void> {
+  const { data: existingGroups, error: fetchError } = await supabase
+    .from("groups")
+    .select("slug,status")
+    .eq("status", "active");
+
+  if (fetchError) {
+    console.error("active groups 取得失敗", fetchError);
+    return;
+  }
+
+  const toDeactivate = (existingGroups ?? [])
+    .filter((group) => !activeCsvSlugs.has(group.slug as string))
+    .map((group) => group.slug as string);
+
+  if (toDeactivate.length === 0) {
+    console.log("inactive 化対象の groups はありません");
+    return;
+  }
+
+  const { error: deactivateError } = await supabase
+    .from("groups")
+    .update({
+      status: "inactive",
+      deleted_at: runAtIso,
+      updated_at: runAtIso,
+    })
+    .in("slug", toDeactivate);
+
+  if (deactivateError) {
+    console.error("groups inactive 化失敗", deactivateError);
+    return;
+  }
+
+  console.log(`groups inactive 化: ${toDeactivate.length}件`);
+}
+
+async function syncExternalIds(
+  groupId: string,
+  slug: string,
+  externals: ExternalRecord[]
+): Promise<void> {
+  for (const ext of externals) {
+    const { service, external_id, url } = ext;
+
+    const { error: extError } = await supabase
+      .from("external_ids")
+      .upsert(
+        {
+          group_id: groupId,
+          service,
+          external_id,
+          url,
+        },
+        { onConflict: "group_id,service" }
+      );
+
+    if (extError) {
+      console.error(
+        `external_ids upsert 失敗 slug="${slug}" service="${service}"`,
+        extError
+      );
+    } else {
+      console.log(`external_ids upsert 成功 slug="${slug}" service="${service}"`);
+    }
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("external_ids")
+    .select("service")
+    .eq("group_id", groupId);
+
+  if (existingError) {
+    console.error(`external_ids 既存取得失敗 slug="${slug}"`, existingError);
+    return;
+  }
+
+  const keep = new Set(externals.map((v) => v.service));
+  const deleteServices = (existing as ExistingExternal[] | null | undefined)
+    ?.map((v) => v.service)
+    .filter((service) => !keep.has(service));
+
+  if (!deleteServices || deleteServices.length === 0) return;
+
+  const { error: deleteError } = await supabase
+    .from("external_ids")
+    .delete()
+    .eq("group_id", groupId)
+    .in("service", deleteServices);
+
+  if (deleteError) {
+    console.error(
+      `external_ids 削除失敗 slug="${slug}" services="${deleteServices.join(",")}"`,
+      deleteError
+    );
+  } else {
+    console.log(
+      `external_ids 削除成功 slug="${slug}" services="${deleteServices.join(",")}"`
+    );
+  }
+}
+
+async function syncProfiles(
+  groupId: string,
+  slug: string,
+  profiles: ProfileRecord[],
+  runAtIso: string
+): Promise<void> {
+  for (const profile of profiles) {
+    const { locale, body } = profile;
+
+    const { error: profileError } = await supabase
+      .from("group_profiles")
+      .upsert(
+        {
+          group_id: groupId,
+          locale,
+          body,
+          updated_at: runAtIso,
+        },
+        { onConflict: "group_id,locale" }
+      );
+
+    if (profileError) {
+      console.error(
+        `group_profiles upsert 失敗 slug="${slug}" locale="${locale}"`,
+        profileError
+      );
+    } else {
+      console.log(`group_profiles upsert 成功 slug="${slug}" locale="${locale}"`);
+    }
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("group_profiles")
+    .select("locale")
+    .eq("group_id", groupId);
+
+  if (existingError) {
+    console.error(`group_profiles 既存取得失敗 slug="${slug}"`, existingError);
+    return;
+  }
+
+  const keep = new Set(profiles.map((v) => v.locale));
+  const deleteLocales = (existing as ExistingProfile[] | null | undefined)
+    ?.map((v) => v.locale)
+    .filter((locale) => !keep.has(locale));
+
+  if (!deleteLocales || deleteLocales.length === 0) return;
+
+  const { error: deleteError } = await supabase
+    .from("group_profiles")
+    .delete()
+    .eq("group_id", groupId)
+    .in("locale", deleteLocales);
+
+  if (deleteError) {
+    console.error(
+      `group_profiles 削除失敗 slug="${slug}" locales="${deleteLocales.join(",")}"`,
+      deleteError
+    );
+  } else {
+    console.log(
+      `group_profiles 削除成功 slug="${slug}" locales="${deleteLocales.join(",")}"`
+    );
+  }
+}
+
+async function syncAttributes(
+  groupId: string,
+  slug: string,
+  attributes: AttributeRecord[],
+  runAtIso: string
+): Promise<void> {
+  for (const attribute of attributes) {
+    const { key, locale, value } = attribute;
+
+    const { error: attrError } = await supabase
+      .from("group_attributes")
+      .upsert(
+        {
+          group_id: groupId,
+          key,
+          locale,
+          value,
+          updated_at: runAtIso,
+        },
+        { onConflict: "group_id,key,locale" }
+      );
+
+    if (attrError) {
+      console.error(
+        `group_attributes upsert 失敗 slug="${slug}" key="${key}" locale="${locale}"`,
+        attrError
+      );
+    } else {
+      console.log(
+        `group_attributes upsert 成功 slug="${slug}" key="${key}" locale="${locale}"`
+      );
+    }
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("group_attributes")
+    .select("id,key,locale")
+    .eq("group_id", groupId);
+
+  if (existingError) {
+    console.error(`group_attributes 既存取得失敗 slug="${slug}"`, existingError);
+    return;
+  }
+
+  const keep = new Set(attributes.map((v) => `${v.key}:${v.locale}`));
+  const deleteIds = (existing as ExistingAttribute[] | null | undefined)
+    ?.filter((v) => !keep.has(`${v.key}:${v.locale}`))
+    .map((v) => v.id);
+
+  if (!deleteIds || deleteIds.length === 0) return;
+
+  const { error: deleteError } = await supabase
+    .from("group_attributes")
+    .delete()
+    .in("id", deleteIds);
+
+  if (deleteError) {
+    console.error(`group_attributes 削除失敗 slug="${slug}"`, deleteError);
+  } else {
+    console.log(`group_attributes 削除成功 slug="${slug}" 件数=${deleteIds.length}`);
+  }
+}
+
 async function main() {
   console.log("MASTER_profile.csv から IMDB へインポート開始");
 
   const rows = loadCsv();
   console.log(`読み込んだ行数: ${rows.length}`);
+  const runAtIso = new Date().toISOString();
+  const activeCsvSlugs = new Set<string>();
+  // Standard mode: do NOT deactivate missing groups unless explicitly enabled.
+  const deactivateMissing = process.env.DEACTIVATE_MISSING_GROUPS === "1";
+  const allowEmptyDeactivation = process.env.ALLOW_EMPTY_CSV_DEACTIVATION === "1";
 
   for (const row of rows) {
     const slug = normalizeSlug(row.slug);
@@ -293,6 +543,8 @@ async function main() {
       continue;
     }
 
+    activeCsvSlugs.add(slug);
+
     // 1. groups に upsert
     const { data: group, error: groupError } = await supabase
     .from("groups")
@@ -301,7 +553,9 @@ async function main() {
         slug,
         name_ja: row.nameJapanese,
         status: "active",
-        updated_at: new Date().toISOString()
+        deleted_at: null,
+        last_seen_at: runAtIso,
+        updated_at: runAtIso
         },
         { onConflict: "slug" }
     )
@@ -318,94 +572,27 @@ async function main() {
 
     // 2. external_ids をサービスごとに upsert
     const externals = buildExternalRecords(row);
-
-    for (const ext of externals) {
-      const { service, external_id, url } = ext;
-
-      const { error: extError } = await supabase
-        .from("external_ids")
-        .upsert(
-          {
-            group_id: groupId,
-            service,
-            external_id,
-            url,
-          },
-          { onConflict: "group_id,service" }
-        );
-
-      if (extError) {
-        console.error(
-          `external_ids upsert 失敗 slug="${slug}" service="${service}"`,
-          extError
-        );
-      } else {
-        console.log(
-          `external_ids upsert 成功 slug="${slug}" service="${service}"`
-        );
-      }
-    }
+    await syncExternalIds(groupId, slug, externals);
 
     // 3. group_profiles を言語ごとに upsert
     const profiles = buildProfileRecords(row);
-
-    for (const profile of profiles) {
-      const { locale, body } = profile;
-
-      const { error: profileError } = await supabase
-        .from("group_profiles")
-        .upsert(
-          {
-            group_id: groupId,
-            locale,
-            body,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "group_id,locale" }
-        );
-
-      if (profileError) {
-        console.error(
-          `group_profiles upsert 失敗 slug="${slug}" locale="${locale}"`,
-          profileError
-        );
-      } else {
-        console.log(
-          `group_profiles upsert 成功 slug="${slug}" locale="${locale}"`
-        );
-      }
-    }
+    await syncProfiles(groupId, slug, profiles, runAtIso);
 
     // 4. group_attributes を言語ごとに upsert
     const attributes = buildAttributeRecords(row);
+    await syncAttributes(groupId, slug, attributes, runAtIso);
+  }
 
-    for (const attribute of attributes) {
-      const { key, locale, value } = attribute;
-
-      const { error: attrError } = await supabase
-        .from("group_attributes")
-        .upsert(
-          {
-            group_id: groupId,
-            key,
-            locale,
-            value,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "group_id,key,locale" }
-        );
-
-      if (attrError) {
-        console.error(
-          `group_attributes upsert 失敗 slug="${slug}" key="${key}" locale="${locale}"`,
-          attrError
-        );
-      } else {
-        console.log(
-          `group_attributes upsert 成功 slug="${slug}" key="${key}" locale="${locale}"`
-        );
-      }
+  if (deactivateMissing) {
+    if (!hasNonEmptyCsvRows(rows) && !allowEmptyDeactivation) {
+      console.warn(
+        "CSV有効行が0件のため inactive 化をスキップしました (ALLOW_EMPTY_CSV_DEACTIVATION=1 で許可)"
+      );
+    } else {
+      await deactivateMissingGroups(activeCsvSlugs, runAtIso);
     }
+  } else {
+    console.log("groups の inactive 化はスキップしました (DEACTIVATE_MISSING_GROUPS=1 で有効化)");
   }
 
   console.log("インポート完了");

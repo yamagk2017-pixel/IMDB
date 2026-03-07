@@ -91,6 +91,9 @@ slug のルール：
 * 1〜数件の更新だけ行いたい場合は `importFlag` を使う
   * `importFlag` が空・`0` 以外の行だけ取り込み対象
   * 実行例：`IMPORT_FLAG_ONLY=1 npx tsx script/import_master.ts`
+* 標準仕様では、インポート時に `groups.status` の active/inactive は切り替えない
+  * `groups` の inactive 化を実行したいイレギュラー時のみ `DEACTIVATE_MISSING_GROUPS=1` を明示する
+  * 例：`DEACTIVATE_MISSING_GROUPS=1 npx tsx script/import_master.ts`
 
 ### STEP 4：Supabase 上で確認
 
