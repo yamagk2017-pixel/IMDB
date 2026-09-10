@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { parseResearchJson, type ResearchResult } from "./schema.js";
 
 // Gemini supports a subset of JSON Schema. Keep this deliberately simple and
@@ -142,41 +142,30 @@ export async function generateProfileWithGemini(input: {
   prompt: string;
 }): Promise<GeminiResearchResponse> {
   const client = new GoogleGenAI({ apiKey: input.apiKey });
-  const response = await client.interactions.create({
+  const response = await client.models.generateContent({
     model: input.model,
-    input: input.prompt,
-    tools: [{ type: "google_search" }],
-    response_format: {
-      type: "text",
-      mime_type: "application/json",
-      schema: researchResponseJsonSchema,
+    contents: input.prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+      responseMimeType: "application/json",
+      responseJsonSchema: researchResponseJsonSchema,
+      maxOutputTokens: 8_192,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+      httpOptions: {
+        timeout: 240_000,
+        retryOptions: { attempts: 1 },
+      },
     },
-    generation_config: {
-      max_output_tokens: 8_192,
-      thinking_level: "medium",
-    },
-    store: false,
-  }, {
-    timeout_ms: 600_000,
-    retries: { strategy: "none" },
   });
 
-  const raw = response.output_text?.trim();
+  const raw = response.text?.trim();
   if (!raw) {
-    const details = response.errors
-      ?.map((error) => error.message)
-      .filter(Boolean)
-      .join("; ");
-    throw new Error(
-      details
-        ? `Geminiから本文が返りませんでした: ${details}`
-        : "Geminiから本文が返りませんでした",
-    );
+    throw new Error("Geminiから本文が返りませんでした");
   }
 
   return {
     result: parseResearchJson(raw),
-    requestId: response.id ?? null,
-    model: response.model ?? input.model,
+    requestId: response.responseId ?? null,
+    model: response.modelVersion ?? input.model,
   };
 }
