@@ -46,6 +46,9 @@
 - `agency_ja` は現在の所属・運営を記載する。
 - `activity_started_month` は `YYYY-MM`。根拠に応じて basis を `formation`、`debut`、`first_show`、`relaunch`、`unknown` から選ぶ。
 - 外部URLは対象グループ本人のページだけを返す。
+- `calendar_url` は、公式サイトや公式SNSから本人のものと確認できる公開カレンダー、または公式スケジュールページのURLを返す。Google CalendarやTimeTreeなどの公開カレンダーも可とする。
+- `ticketdive_url` は、対象グループのTicketDiveアーティストページ（`https://ticketdive.com/artist/...`）だけを返す。個別公演のチケット販売ページは返さない。
+- `calendar_url` と `ticketdive_url` は推測で組み立てず、本人のページだと確認できない場合は `null` にする。値を返す場合は、確認根拠を `sources` と `field_evidence` に含める。根拠キーはそれぞれ `external_links.calendar_url`、`external_links.ticketdive_url` とする。
 
 ## 出力形式
 
@@ -72,7 +75,9 @@
     "instagram_url": "https://..." または null,
     "tiktok_url": "https://..." または null,
     "youtube_url": "https://..." または null,
-    "spotify_url": "https://..." または null
+    "spotify_url": "https://..." または null,
+    "calendar_url": "https://..." または null,
+    "ticketdive_url": "https://ticketdive.com/artist/..." または null
   },
   "sources": [
     {
@@ -87,7 +92,9 @@
   "field_evidence": {
     "overview_ja": ["https://..."],
     "musical_style_ja": ["https://..."],
-    "attributes.members_ja": ["https://..."]
+    "attributes.members_ja": ["https://..."],
+    "external_links.calendar_url": ["https://..."],
+    "external_links.ticketdive_url": ["https://ticketdive.com/artist/..."]
   },
   "confidence": {
     "identity": 0.0,

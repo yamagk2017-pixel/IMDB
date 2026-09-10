@@ -55,6 +55,8 @@ export const researchResponseJsonSchema = {
         tiktok_url: nullableUrl,
         youtube_url: nullableUrl,
         spotify_url: nullableUrl,
+        calendar_url: nullableUrl,
+        ticketdive_url: nullableUrl,
       },
       required: [
         "website_url",
@@ -63,6 +65,8 @@ export const researchResponseJsonSchema = {
         "tiktok_url",
         "youtube_url",
         "spotify_url",
+        "calendar_url",
+        "ticketdive_url",
       ],
     },
     sources: {

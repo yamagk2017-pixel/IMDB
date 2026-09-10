@@ -31,6 +31,8 @@ export const WORKFLOW_COLUMNS = [
   "tiktok_url",
   "youtube_url",
   "spotify_url",
+  "calendar_url",
+  "ticketdive_url",
   "sources_json",
   "field_evidence_json",
   "confidence_json",
@@ -101,6 +103,8 @@ export const researchResultSchema = z
       tiktok_url: nullableUrl,
       youtube_url: nullableUrl,
       spotify_url: nullableUrl,
+      calendar_url: nullableUrl,
+      ticketdive_url: nullableUrl,
     }),
     sources: z.array(sourceSchema).min(2).max(20),
     field_evidence: z.record(z.string(), z.array(z.string().url()).min(1)),
@@ -113,6 +117,22 @@ export const researchResultSchema = z
   })
   .superRefine((value, context) => {
     const sourceUrls = new Set(value.sources.map((source) => source.url));
+    const ticketdiveUrl = value.external_links.ticketdive_url;
+    if (ticketdiveUrl) {
+      const parsed = new URL(ticketdiveUrl);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      if (
+        !["ticketdive.com", "www.ticketdive.com"].includes(parsed.hostname) ||
+        parts[0]?.toLowerCase() !== "artist" ||
+        !parts[1]
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["external_links", "ticketdive_url"],
+          message: "TicketDiveのアーティストページURLが必要です",
+        });
+      }
+    }
     for (const [index, source] of value.sources.entries()) {
       const parsed = new URL(source.url);
       const isTopPage = (parsed.pathname === "" || parsed.pathname === "/") &&
@@ -135,6 +155,18 @@ export const researchResultSchema = z
             message: `sources に存在しないURLです: ${url}`,
           });
         }
+      }
+    }
+
+    for (const field of ["calendar_url", "ticketdive_url"] as const) {
+      if (!value.external_links[field]) continue;
+      const evidenceKey = `external_links.${field}`;
+      if (!value.field_evidence[evidenceKey]?.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["field_evidence", evidenceKey],
+          message: `${evidenceKey} に根拠URLが必要です`,
+        });
       }
     }
 

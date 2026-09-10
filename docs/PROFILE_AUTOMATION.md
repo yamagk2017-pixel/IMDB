@@ -103,7 +103,7 @@ npm run profile:sheet:setup
 - `profile_ja`: DBへ登録する編集可能な本文
 - `overview_ja` / `musical_style_ja`: 生成時の内訳
 - メンバー、活動拠点、所属、活動開始月
-- 公式サイト・SNS・配信サービスURL
+- 公式サイト・SNS・配信サービスURL・公式カレンダー・TicketDiveアーティストページ
 - `sources_json`: 出典一覧
 - `field_evidence_json`: 項目と根拠URLの対応
 - 信頼度、注意事項、既存DB値、GeminiリクエストID

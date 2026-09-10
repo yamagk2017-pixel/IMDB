@@ -93,6 +93,8 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
       tiktok_url: result.external_links.tiktok_url ?? "",
       youtube_url: result.external_links.youtube_url ?? "",
       spotify_url: result.external_links.spotify_url ?? "",
+      calendar_url: result.external_links.calendar_url ?? "",
+      ticketdive_url: result.external_links.ticketdive_url ?? "",
       sources_json: json(result.sources),
       field_evidence_json: json(result.field_evidence),
       confidence_json: json(result.confidence),

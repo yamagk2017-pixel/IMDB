@@ -104,6 +104,14 @@ function extractExternalId(service: string, url: string): string | null {
     if (["x", "instagram", "tiktok"].includes(service)) {
       return parts[0]?.replace(/^@/, "") ?? null;
     }
+    if (service === "ticketdive") {
+      const artistIndex = parts.findIndex(
+        (part) => part.toLowerCase() === "artist",
+      );
+      return artistIndex >= 0
+        ? parts[artistIndex + 1] ?? null
+        : parts.at(-1) ?? null;
+    }
     return null;
   } catch {
     return null;
@@ -190,6 +198,8 @@ export function previewPublish(values: WorkflowValues): PublishPreview {
     "tiktok_url",
     "youtube_url",
     "spotify_url",
+    "calendar_url",
+    "ticketdive_url",
   ] as const) {
     const url = optionalCell(values[field]);
     if (!url) continue;
@@ -214,6 +224,8 @@ export function previewPublish(values: WorkflowValues): PublishPreview {
     "tiktok_url",
     "youtube_url",
     "spotify_url",
+    "calendar_url",
+    "ticketdive_url",
   ] as const) {
     if (optionalCell(values[field])) fields.push(field);
   }
@@ -279,6 +291,8 @@ export async function publishApprovedRow(values: WorkflowValues): Promise<Publis
     ["tiktok", "tiktok_url"],
     ["youtube_channel", "youtube_url"],
     ["spotify", "spotify_url"],
+    ["schedule", "calendar_url"],
+    ["ticketdive", "ticketdive_url"],
   ] as const) {
     const url = optionalCell(values[column]);
     if (!url) continue;

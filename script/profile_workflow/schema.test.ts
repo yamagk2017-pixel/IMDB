@@ -31,6 +31,8 @@ const validResult = {
     tiktok_url: null,
     youtube_url: null,
     spotify_url: null,
+    calendar_url: "https://calendar.google.com/calendar/embed?src=example",
+    ticketdive_url: "https://ticketdive.com/artist/example",
   },
   sources: [
     {
@@ -49,10 +51,32 @@ const validResult = {
       source_type: "primary",
       supports: ["musical_style_ja"],
     },
+    {
+      url: "https://calendar.google.com/calendar/embed?src=example",
+      title: "公式カレンダー",
+      publisher: "テストグループ",
+      accessed_at: "2026-09-10",
+      source_type: "platform",
+      supports: ["external_links.calendar_url"],
+    },
+    {
+      url: "https://ticketdive.com/artist/example",
+      title: "テストグループ TicketDive",
+      publisher: "TicketDive",
+      accessed_at: "2026-09-10",
+      source_type: "platform",
+      supports: ["external_links.ticketdive_url"],
+    },
   ],
   field_evidence: {
     overview_ja: ["https://example.com/"],
     musical_style_ja: ["https://example.com/music"],
+    "external_links.calendar_url": [
+      "https://calendar.google.com/calendar/embed?src=example",
+    ],
+    "external_links.ticketdive_url": [
+      "https://ticketdive.com/artist/example",
+    ],
   },
   confidence: { identity: 0.95, profile: 0.9, attributes: 0.85 },
   warnings: [],
@@ -89,6 +113,15 @@ test("活動開始月をDBの日付へ正規化する", () => {
   assert.throws(() => normalizeMonthForDatabase("2024"));
 });
 
+test("TicketDiveの個別公演URLを拒否する", () => {
+  const invalid = structuredClone(validResult);
+  invalid.external_links.ticketdive_url = "https://ticketdive.com/event/example";
+  assert.throws(
+    () => parseResearchJson(JSON.stringify(invalid)),
+    /アーティストページURL/,
+  );
+});
+
 test("公開前にプロフィールと根拠の対応を検証する", () => {
   const values = {
     group_name: validResult.canonical_name_ja,
@@ -96,8 +129,13 @@ test("公開前にプロフィールと根拠の対応を検証する", () => {
     profile_ja: `${validResult.overview_ja}\n\n${validResult.musical_style_ja}`,
     sources_json: JSON.stringify(validResult.sources),
     field_evidence_json: JSON.stringify(validResult.field_evidence),
+    calendar_url: validResult.external_links.calendar_url,
+    ticketdive_url: validResult.external_links.ticketdive_url,
   };
-  assert.equal(previewPublish(values).slug, "test-group");
+  const preview = previewPublish(values);
+  assert.equal(preview.slug, "test-group");
+  assert.ok(preview.fields.includes("calendar_url"));
+  assert.ok(preview.fields.includes("ticketdive_url"));
 
   assert.throws(
     () => previewPublish({ ...values, field_evidence_json: "{}" }),
