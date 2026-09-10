@@ -139,33 +139,57 @@ export type GeminiResearchResponse = {
 export async function generateProfileWithGemini(input: {
   apiKey: string;
   model: string;
+  fallbackModel?: string;
   prompt: string;
 }): Promise<GeminiResearchResponse> {
   const client = new GoogleGenAI({ apiKey: input.apiKey });
-  const response = await client.models.generateContent({
-    model: input.model,
-    contents: input.prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      responseMimeType: "application/json",
-      responseJsonSchema: researchResponseJsonSchema,
-      maxOutputTokens: 8_192,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
-      httpOptions: {
-        timeout: 240_000,
-        retryOptions: { attempts: 1 },
-      },
-    },
-  });
+  const models = [...new Set([input.model, input.fallbackModel].filter(Boolean))] as string[];
+  const failures: string[] = [];
 
-  const raw = response.text?.trim();
-  if (!raw) {
-    throw new Error("Geminiから本文が返りませんでした");
+  for (const [index, model] of models.entries()) {
+    try {
+      const response = await client.models.generateContent({
+        model,
+        contents: input.prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+          responseJsonSchema: researchResponseJsonSchema,
+          maxOutputTokens: 8_192,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+          httpOptions: {
+            timeout: 240_000,
+            retryOptions: { attempts: 1 },
+          },
+        },
+      });
+
+      const raw = response.text?.trim();
+      if (!raw) {
+        throw new Error("Geminiから本文が返りませんでした");
+      }
+
+      return {
+        result: parseResearchJson(raw),
+        requestId: response.responseId ?? null,
+        model: response.modelVersion ?? model,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(`${model}: ${message}`);
+      const retryable = /\b(?:408|429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|fetch failed|timed? ?out/i.test(
+        message,
+      );
+      const hasFallback = index < models.length - 1;
+      if (!retryable || !hasFallback) break;
+
+      const delayMs = 2_000 + Math.floor(Math.random() * 1_000);
+      console.warn(
+        `Gemini一時障害: model=${model}; ${delayMs}ms後にmodel=${models[index + 1]}へ切り替えます`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
   }
 
-  return {
-    result: parseResearchJson(raw),
-    requestId: response.responseId ?? null,
-    model: response.modelVersion ?? input.model,
-  };
+  throw new Error(`Gemini生成に失敗しました: ${failures.join(" / ")}`);
 }

@@ -52,6 +52,8 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) throw new Error("GEMINI_API_KEY が設定されていません");
     const modelId = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
+    const fallbackModelId =
+      process.env.GEMINI_FALLBACK_MODEL?.trim() || "gemini-3.6-flash";
     const prompt = buildResearchPrompt({
       requestId,
       groupName,
@@ -68,6 +70,7 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
     const generated = await generateProfileWithGemini({
       apiKey,
       model: modelId,
+      fallbackModel: fallbackModelId,
       prompt,
     });
     const result = generated.result;

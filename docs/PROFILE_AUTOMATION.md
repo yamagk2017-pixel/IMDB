@@ -68,6 +68,7 @@ APIキーはスプレッドシート、ソースコード、チャットへ貼�
 |---|---|---|
 | `GOOGLE_WORKFLOW_SHEET_NAME` | `IMDB_PROFILE_WORKFLOW` | 操作対象タブ |
 | `GEMINI_MODEL` | `gemini-3.8-flash` | 調査と構造化出力に使うモデル |
+| `GEMINI_FALLBACK_MODEL` | `gemini-3.6-flash` | 429・503・タイムアウト時に切り替える予備モデル |
 | `IMDB_PROFILE_PUBLISH_ENABLED` | `false` | `true` のときだけSupabase公開ジョブを有効化 |
 
 最初の精度検証中は `IMDB_PROFILE_PUBLISH_ENABLED=false` のままにします。
