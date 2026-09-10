@@ -70,6 +70,20 @@ test("sourcesにない根拠URLを拒否する", () => {
   assert.throws(() => parseResearchJson(JSON.stringify(invalid)), /sources に存在しないURL/);
 });
 
+test("二次情報のトップページURLを拒否する", () => {
+  const invalid = structuredClone(validResult);
+  invalid.sources[1] = {
+    ...invalid.sources[1],
+    url: "https://media.example.com/",
+    source_type: "secondary",
+  };
+  invalid.field_evidence.musical_style_ja = ["https://media.example.com/"];
+  assert.throws(
+    () => parseResearchJson(JSON.stringify(invalid)),
+    /個別記事のURLが必要/,
+  );
+});
+
 test("活動開始月をDBの日付へ正規化する", () => {
   assert.equal(normalizeMonthForDatabase("2024-05"), "2024-05-01");
   assert.throws(() => normalizeMonthForDatabase("2024"));

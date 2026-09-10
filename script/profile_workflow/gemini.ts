@@ -180,12 +180,13 @@ export async function generateProfileWithGemini(input: {
       const retryable = /\b(?:408|429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|fetch failed|timed? ?out/i.test(
         message,
       );
+      const qualityRetryable = message.includes("生成結果の検証に失敗しました");
       const hasFallback = index < models.length - 1;
-      if (!retryable || !hasFallback) break;
+      if ((!retryable && !qualityRetryable) || !hasFallback) break;
 
       const delayMs = 2_000 + Math.floor(Math.random() * 1_000);
       console.warn(
-        `Gemini一時障害: model=${model}; ${delayMs}ms後にmodel=${models[index + 1]}へ切り替えます`,
+        `Gemini再生成: model=${model}; ${delayMs}ms後にmodel=${models[index + 1]}へ切り替えます`,
       );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }

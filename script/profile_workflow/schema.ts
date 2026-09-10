@@ -113,6 +113,19 @@ export const researchResultSchema = z
   })
   .superRefine((value, context) => {
     const sourceUrls = new Set(value.sources.map((source) => source.url));
+    for (const [index, source] of value.sources.entries()) {
+      const parsed = new URL(source.url);
+      const isTopPage = (parsed.pathname === "" || parsed.pathname === "/") &&
+        !parsed.search && !parsed.hash;
+      if (source.source_type === "secondary" && isTopPage) {
+        context.addIssue({
+          code: "custom",
+          path: ["sources", index, "url"],
+          message: "二次情報にはサイトのトップではなく個別記事のURLが必要です",
+        });
+      }
+    }
+
     for (const [field, urls] of Object.entries(value.field_evidence)) {
       for (const url of urls) {
         if (!sourceUrls.has(url)) {
