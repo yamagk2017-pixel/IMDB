@@ -140,7 +140,7 @@ export function composeProfileJa(result: ResearchResult): string {
   return `${result.overview_ja}\n\n${result.musical_style_ja}`;
 }
 
-export function parseAgentJson(raw: string): ResearchResult {
+export function parseResearchJson(raw: string): ResearchResult {
   const trimmed = raw.trim();
   const withoutFence = trimmed
     .replace(/^```(?:json)?\s*/i, "")
@@ -168,9 +168,9 @@ export function parseAgentJson(raw: string): ResearchResult {
       .slice(0, 8)
       .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
       .join("; ");
-    throw new Error(`Codex出力の検証に失敗しました: ${details}`);
+    throw new Error(`生成結果の検証に失敗しました: ${details}`);
   }
-  throw new Error("Codex出力をJSONとして解析できませんでした");
+  throw new Error("生成結果をJSONとして解析できませんでした");
 }
 
 export function normalizeMonthForDatabase(value: string): string {

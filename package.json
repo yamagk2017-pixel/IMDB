@@ -18,7 +18,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@cursor/sdk": "1.0.31",
+    "@google/genai": "^2.21.0",
     "@supabase/supabase-js": "^2.84.0",
     "csv-parse": "7.0.2",
     "dotenv": "^17.2.3",

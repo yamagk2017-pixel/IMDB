@@ -4,7 +4,7 @@ import { previewPublish } from "./database.js";
 import {
   composeProfileJa,
   normalizeMonthForDatabase,
-  parseAgentJson,
+  parseResearchJson,
 } from "./schema.js";
 
 const validResult = {
@@ -59,7 +59,7 @@ const validResult = {
 };
 
 test("コードフェンス付きJSONを検証して読み込める", () => {
-  const parsed = parseAgentJson(`\`\`\`json\n${JSON.stringify(validResult)}\n\`\`\``);
+  const parsed = parseResearchJson(`\`\`\`json\n${JSON.stringify(validResult)}\n\`\`\``);
   assert.equal(parsed.suggested_slug, "test-group");
   assert.match(composeProfileJa(parsed), /\n\n/);
 });
@@ -67,7 +67,7 @@ test("コードフェンス付きJSONを検証して読み込める", () => {
 test("sourcesにない根拠URLを拒否する", () => {
   const invalid = structuredClone(validResult);
   invalid.field_evidence.overview_ja = ["https://invalid.example.com/"];
-  assert.throws(() => parseAgentJson(JSON.stringify(invalid)), /sources に存在しないURL/);
+  assert.throws(() => parseResearchJson(JSON.stringify(invalid)), /sources に存在しないURL/);
 });
 
 test("活動開始月をDBの日付へ正規化する", () => {

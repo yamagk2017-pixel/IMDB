@@ -63,10 +63,8 @@ jobs:
       - name: Generate profile drafts
         run: npm run profile:generate -- --max-rows=${{ inputs.max_rows || '3' }}
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          CURSOR_MODEL: ${{ vars.CURSOR_MODEL }}
-          CURSOR_REPO_URL: https://github.com/${{ github.repository }}
-          CURSOR_REPO_REF: ${{ github.sha }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
           GOOGLE_WORKFLOW_SPREADSHEET_ID: ${{ secrets.GOOGLE_WORKFLOW_SPREADSHEET_ID }}
           GOOGLE_WORKFLOW_SHEET_NAME: ${{ vars.GOOGLE_WORKFLOW_SHEET_NAME }}

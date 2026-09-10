@@ -1,12 +1,11 @@
 import "./env.js";
 import { randomUUID } from "node:crypto";
-import { Agent, CursorAgentError } from "@cursor/sdk";
 import { loadExistingGroup } from "./database.js";
+import { generateProfileWithGemini } from "./gemini.js";
 import { buildResearchPrompt } from "./prompt.js";
 import {
   composeProfileJa,
   optionalCell,
-  parseAgentJson,
   type WorkflowValues,
 } from "./schema.js";
 import { WorkflowSheet, type WorkflowRow } from "./sheets.js";
@@ -21,18 +20,7 @@ function maxRows(): number {
   return parsed;
 }
 
-function repositoryUrl(): string {
-  const configured = process.env.CURSOR_REPO_URL?.trim();
-  if (configured) return configured;
-  const githubRepository = process.env.GITHUB_REPOSITORY?.trim();
-  if (githubRepository) return `https://github.com/${githubRepository}`;
-  throw new Error("CURSOR_REPO_URL が設定されていません");
-}
-
 function errorMessage(error: unknown): string {
-  if (error instanceof CursorAgentError) {
-    return `${error.message} (retryable=${error.isRetryable})`;
-  }
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -59,12 +47,11 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
     last_error: "",
   });
 
-  let agent: Awaited<ReturnType<typeof Agent.create>> | undefined;
   try {
     const existing = await loadExistingGroup(row.values.group_slug, groupName);
-    const apiKey = process.env.CURSOR_API_KEY?.trim();
-    if (!apiKey) throw new Error("CURSOR_API_KEY が設定されていません");
-    const modelId = process.env.CURSOR_MODEL?.trim() || "auto";
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    if (!apiKey) throw new Error("GEMINI_API_KEY が設定されていません");
+    const modelId = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
     const prompt = buildResearchPrompt({
       requestId,
       groupName,
@@ -73,37 +60,17 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
       existing,
     });
 
-    agent = await Agent.create({
-      apiKey,
-      model: { id: modelId },
-      cloud: {
-        repos: [
-          {
-            url: repositoryUrl(),
-            startingRef: process.env.CURSOR_REPO_REF?.trim() || "main",
-          },
-        ],
-        autoCreatePR: false,
-        skipReviewerRequest: true,
-        metadata: { request_id: requestId, group_name: groupName },
-      },
-    });
-
     await sheet.patchRow(row.rowNumber, {
-      agent_id: agent.agentId,
+      agent_id: "gemini-api",
       current_data_json: existing ? json(existing) : "",
       model: modelId,
     });
-    const run = await agent.send(prompt);
-    await sheet.patchRow(row.rowNumber, { run_id: run.id });
-    const runResult = await run.wait();
-    if (runResult.status !== "finished" || !runResult.result) {
-      throw new Error(
-        `Codex実行が完了しませんでした: ${runResult.status} ${runResult.error?.message ?? ""}`,
-      );
-    }
-
-    const result = parseAgentJson(runResult.result);
+    const generated = await generateProfileWithGemini({
+      apiKey,
+      model: modelId,
+      prompt,
+    });
+    const result = generated.result;
     const patch: WorkflowValues = {
       status: "review",
       group_name: result.canonical_name_ja,
@@ -128,12 +95,15 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
       confidence_json: json(result.confidence),
       warnings_json: json(result.warnings),
       identity_notes: result.identity_notes,
-      model: runResult.model?.id ?? modelId,
+      model: generated.model,
+      run_id: generated.requestId ?? "",
       generated_at: new Date().toISOString(),
       last_error: "",
     };
     await sheet.patchRow(row.rowNumber, patch);
-    console.log(`生成完了: row=${row.rowNumber} group=${groupName} run=${run.id}`);
+    console.log(
+      `生成完了: row=${row.rowNumber} group=${groupName} request=${generated.requestId ?? "unknown"}`,
+    );
   } catch (error) {
     const message = errorMessage(error).slice(0, 5_000);
     await sheet.patchRow(row.rowNumber, {
@@ -141,14 +111,6 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
       last_error: message,
     });
     console.error(`生成失敗: row=${row.rowNumber} group=${groupName}: ${message}`);
-  } finally {
-    if (agent) {
-      try {
-        await agent[Symbol.asyncDispose]();
-      } catch (error) {
-        console.error(`Codex Agentの終了処理に失敗しました: ${errorMessage(error)}`);
-      }
-    }
   }
 }
 
