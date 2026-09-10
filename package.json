@@ -8,20 +8,29 @@
   },
   "scripts": {
     "lint": "eslint . --ext .ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test script/**/*.test.ts",
+    "profile:sheet:setup": "tsx script/profile_workflow/setup_sheet.ts",
+    "profile:generate": "tsx script/profile_workflow/generate.ts",
+    "profile:publish": "tsx script/profile_workflow/publish.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@cursor/sdk": "1.0.31",
     "@supabase/supabase-js": "^2.84.0",
-    "csv-parse": "^6.1.0",
-    "dotenv": "^17.2.3"
+    "csv-parse": "7.0.2",
+    "dotenv": "^17.2.3",
+    "googleapis": "178.1.1",
+    "zod": "4.6.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "22.20.2",
     "eslint": "^10.0.3",
     "globals": "^17.4.0",
+    "tsx": "4.23.13",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1"
   }

@@ -58,4 +58,8 @@ This repository tracks the schema and operational assets for the idol master dat
 3. Define initial RLS policies ensuring only admins can mutate data; apps remain read-only.
 4. Automate verification (optional): integrate GitHub Actions to run linting or `supabase db lint` (when available).
 
+## Profile research workflow
+
+Google SheetsからCodex Cloud Agentへプロフィール調査を依頼し、承認後にSupabaseへ反映するワークフローは [`docs/PROFILE_AUTOMATION.md`](docs/PROFILE_AUTOMATION.md) を参照してください。
+
 This repo becomes the coordination hub for every app that depends on the IMDB. Keep the documentation and migrations in sync with Supabase so the master data stays trustworthy.

@@ -1,0 +1,96 @@
+name: IMDB profile workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 実行する処理
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - setup
+          - generate
+          - publish
+      max_rows:
+        description: 1回に処理する最大行数
+        required: true
+        default: "3"
+  schedule:
+    - cron: "17,47 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: imdb-profile-workflow
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'setup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.20.0"
+          cache: npm
+      - run: npm ci
+      - name: Initialize workflow sheet
+        run: npm run profile:sheet:setup
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+          GOOGLE_WORKFLOW_SPREADSHEET_ID: ${{ secrets.GOOGLE_WORKFLOW_SPREADSHEET_ID }}
+          GOOGLE_WORKFLOW_SHEET_NAME: ${{ vars.GOOGLE_WORKFLOW_SHEET_NAME }}
+
+  generate:
+    if: >-
+      github.event_name == 'schedule' ||
+      inputs.mode == 'all' ||
+      inputs.mode == 'generate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.20.0"
+          cache: npm
+      - run: npm ci
+      - name: Generate profile drafts
+        run: npm run profile:generate -- --max-rows=${{ inputs.max_rows || '3' }}
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          CURSOR_MODEL: ${{ vars.CURSOR_MODEL }}
+          CURSOR_REPO_URL: https://github.com/${{ github.repository }}
+          CURSOR_REPO_REF: ${{ github.sha }}
+          GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+          GOOGLE_WORKFLOW_SPREADSHEET_ID: ${{ secrets.GOOGLE_WORKFLOW_SPREADSHEET_ID }}
+          GOOGLE_WORKFLOW_SHEET_NAME: ${{ vars.GOOGLE_WORKFLOW_SHEET_NAME }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_READ_KEY: ${{ secrets.SUPABASE_READ_KEY }}
+
+  publish:
+    if: >-
+      (github.event_name == 'schedule' || inputs.mode == 'all' || inputs.mode == 'publish') &&
+      vars.IMDB_PROFILE_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.20.0"
+          cache: npm
+      - run: npm ci
+      - name: Publish approved rows
+        run: npm run profile:publish -- --apply --max-rows=${{ inputs.max_rows || '10' }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+          GOOGLE_WORKFLOW_SPREADSHEET_ID: ${{ secrets.GOOGLE_WORKFLOW_SPREADSHEET_ID }}
+          GOOGLE_WORKFLOW_SHEET_NAME: ${{ vars.GOOGLE_WORKFLOW_SHEET_NAME }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
