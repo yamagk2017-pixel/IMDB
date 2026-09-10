@@ -110,6 +110,8 @@ npm run profile:sheet:setup
 
 生成失敗時は `generation_error` と `last_error` を確認し、修正後に `queued` へ戻します。
 
+カレンダーとTicketDiveは、Geminiの検索結果、既存DB値、公式ページ内のリンク・iframeから候補を集め、実在性と対象グループとの対応を機械検証します。確認できない場合は空欄にし、`warnings_json` に `calendar_url:` または `ticketdive_url:` で始まる理由を残します。
+
 ## 7. 確認して公開する
 
 1. `profile_ja` と各項目を直接修正します。

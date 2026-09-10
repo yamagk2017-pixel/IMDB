@@ -47,8 +47,10 @@
 - `activity_started_month` は `YYYY-MM`。根拠に応じて basis を `formation`、`debut`、`first_show`、`relaunch`、`unknown` から選ぶ。
 - 外部URLは対象グループ本人のページだけを返す。
 - `calendar_url` は、公式サイトや公式SNSから本人のものと確認できる公開カレンダー、または公式スケジュールページのURLを返す。Google CalendarやTimeTreeなどの公開カレンダーも可とする。
-- `ticketdive_url` は、対象グループのTicketDiveアーティストページ（`https://ticketdive.com/artist/...`）だけを返す。個別公演のチケット販売ページは返さない。
+- `calendar_url` はグループ名と「schedule」「calendar」「Google Calendar」「TimeTree」を組み合わせて検索し、公式サイトのナビゲーション、リンク、埋め込みiframeも確認する。
+- `ticketdive_url` は、対象グループのTicketDiveアーティストページ（`https://ticketdive.com/artist/...`）だけを返す。`"グループ名" site:ticketdive.com/artist/` でも検索し、検索結果に表示されたURLを一文字も変更せず使う。個別公演のチケット販売ページは返さない。
 - `calendar_url` と `ticketdive_url` は推測で組み立てず、本人のページだと確認できない場合は `null` にする。値を返す場合は、確認根拠を `sources` と `field_evidence` に含める。根拠キーはそれぞれ `external_links.calendar_url`、`external_links.ticketdive_url` とする。
+- `warnings` は問題ごとに1要素へ分ける。外部リンクを確認できなかった場合は、`calendar_url:`、`ticketdive_url:` のように対象キーから書き始める。
 
 ## 出力形式
 

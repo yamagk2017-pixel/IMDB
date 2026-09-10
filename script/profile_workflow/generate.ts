@@ -2,6 +2,7 @@ import "./env.js";
 import { randomUUID } from "node:crypto";
 import { loadExistingGroup } from "./database.js";
 import { generateProfileWithGemini } from "./gemini.js";
+import { resolveResearchExternalLinks } from "./external_links.js";
 import { buildResearchPrompt } from "./prompt.js";
 import {
   composeProfileJa,
@@ -73,7 +74,11 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
       fallbackModel: fallbackModelId,
       prompt,
     });
-    const result = generated.result;
+    const result = await resolveResearchExternalLinks({
+      result: generated.result,
+      requestedName: groupName,
+      existingLinks: existing?.external_links,
+    });
     const patch: WorkflowValues = {
       status: "review",
       group_name: result.canonical_name_ja,
