@@ -151,7 +151,14 @@ export async function generateProfileWithGemini(input: {
       mime_type: "application/json",
       schema: researchResponseJsonSchema,
     },
+    generation_config: {
+      max_output_tokens: 8_192,
+      thinking_level: "medium",
+    },
     store: false,
+  }, {
+    timeout_ms: 600_000,
+    retries: { strategy: "none" },
   });
 
   const raw = response.output_text?.trim();
