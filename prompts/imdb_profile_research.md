@@ -41,7 +41,7 @@
 
 ### 属性
 
-- `members_ja` は現在の公式メンバーを読点区切りで記載する。
+- `members_ja` は現在の公式メンバーを全角スラッシュ（`／`）区切りで記載する。
 - `location_ja` は確認できた活動拠点だけを記載する。
 - `agency_ja` は現在の所属・運営を記載する。
 - `activity_started_month` は `YYYY-MM`。根拠に応じて basis を `formation`、`debut`、`first_show`、`relaunch`、`unknown` から選ぶ。
@@ -65,7 +65,7 @@
   "overview_ja": "概要本文",
   "musical_style_ja": "音楽性本文",
   "attributes": {
-    "members_ja": "メンバー名、メンバー名" または null,
+    "members_ja": "メンバー名／メンバー名" または null,
     "location_ja": "活動拠点" または null,
     "agency_ja": "所属・運営" または null,
     "activity_started_month": "YYYY-MM" または null,

@@ -17,6 +17,10 @@ on:
         description: 1回に処理する最大行数
         required: true
         default: "3"
+      request_id:
+        description: publish時に対象を1行へ限定するrequest_id
+        required: false
+        default: ""
   schedule:
     - cron: "17,47 * * * *"
 
@@ -74,8 +78,9 @@ jobs:
 
   publish:
     if: >-
-      (github.event_name == 'schedule' || inputs.mode == 'all' || inputs.mode == 'publish') &&
-      vars.IMDB_PROFILE_PUBLISH_ENABLED == 'true'
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish') ||
+      ((github.event_name == 'schedule' || inputs.mode == 'all') &&
+      vars.IMDB_PROFILE_PUBLISH_ENABLED == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -91,5 +96,8 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
           GOOGLE_WORKFLOW_SPREADSHEET_ID: ${{ secrets.GOOGLE_WORKFLOW_SPREADSHEET_ID }}
           GOOGLE_WORKFLOW_SHEET_NAME: ${{ vars.GOOGLE_WORKFLOW_SHEET_NAME }}
+          GOOGLE_MASTER_SHEET_NAME: ${{ vars.GOOGLE_MASTER_SHEET_NAME }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PROFILE_WORKFLOW_REQUEST_ID: ${{ inputs.request_id }}
+          PROFILE_WORKFLOW_REQUIRE_REQUEST_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' }}

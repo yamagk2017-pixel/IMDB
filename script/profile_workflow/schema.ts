@@ -11,6 +11,9 @@ export const WORKFLOW_STATUSES = [
   "publish_error",
 ] as const;
 
+export const WORKFLOW_REQUEST_TYPES = ["create", "update"] as const;
+export type WorkflowRequestType = (typeof WORKFLOW_REQUEST_TYPES)[number];
+
 export const WORKFLOW_COLUMNS = [
   "request_id",
   "status",
@@ -159,13 +162,42 @@ export const researchResultSchema = z
     }
 
     for (const field of ["calendar_url", "ticketdive_url"] as const) {
-      if (!value.external_links[field]) continue;
+      if (!value.external_links[field]) {
+        if (!value.warnings.some((warning) => warning.startsWith(`${field}:`))) {
+          context.addIssue({
+            code: "custom",
+            path: ["warnings"],
+            message: `${field} を確認できなかった理由をwarningsに記録してください`,
+          });
+        }
+        continue;
+      }
       const evidenceKey = `external_links.${field}`;
       if (!value.field_evidence[evidenceKey]?.length) {
         context.addIssue({
           code: "custom",
           path: ["field_evidence", evidenceKey],
           message: `${evidenceKey} に根拠URLが必要です`,
+        });
+      }
+    }
+
+    const spotifyUrl = value.external_links.spotify_url;
+    if (spotifyUrl) {
+      const parsed = new URL(spotifyUrl);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      if (
+        !["open.spotify.com", "www.open.spotify.com"].includes(
+          parsed.hostname.toLowerCase(),
+        ) ||
+        parts[0]?.toLowerCase() !== "artist" ||
+        !parts[1] ||
+        !/^[A-Za-z0-9]+$/.test(parts[1])
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["external_links", "spotify_url"],
+          message: "Spotifyの公式アーティストページURLが必要です",
         });
       }
     }
@@ -228,4 +260,50 @@ export function normalizeMonthForDatabase(value: string): string {
 export function optionalCell(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+export function parseWorkflowRequestType(
+  value: string | null | undefined,
+): WorkflowRequestType {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized !== "create" && normalized !== "update") {
+    throw new Error("request_type に create または update を選択してください");
+  }
+  return normalized;
+}
+
+export function normalizeMembersJa(
+  value: string | null | undefined,
+): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+
+  const members = raw
+    .split(/\s*(?:、|，|,|／|\/|\||\r?\n)\s*/u)
+    .map((member) => member.trim())
+    .filter(Boolean);
+  return members.length ? members.join("／") : null;
+}
+
+export function extractSpotifyArtistId(
+  value: string | null | undefined,
+): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+
+  let candidate = raw;
+  try {
+    const parsed = new URL(raw);
+    if (!/(^|\.)open\.spotify\.com$/i.test(parsed.hostname)) return null;
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    const artistIndex = parts.findIndex(
+      (part) => part.toLowerCase() === "artist",
+    );
+    if (artistIndex < 0 || !parts[artistIndex + 1]) return null;
+    candidate = parts[artistIndex + 1];
+  } catch {
+    // IDだけが入力されている場合は、そのまま検証する。
+  }
+
+  return /^[A-Za-z0-9]+$/.test(candidate) ? candidate : null;
 }

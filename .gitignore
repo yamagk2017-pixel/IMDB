@@ -23,3 +23,4 @@ supabase/.env
 *.log
 .tmp
 .cache/
+.codex-tmp/

@@ -1,6 +1,16 @@
 import "./env.js";
-import { publishApprovedRow, previewPublish } from "./database.js";
-import { WorkflowSheet } from "./sheets.js";
+import {
+  findGroupBySlug,
+  publishApprovedRow,
+  previewPublish,
+  type PublishPreview,
+} from "./database.js";
+import {
+  selectApprovedRows,
+  validatePublishIdentity,
+} from "./operation.js";
+import { optionalCell, type WorkflowValues } from "./schema.js";
+import { MasterSheet, WorkflowSheet } from "./sheets.js";
 
 function isApplyMode(): boolean {
   return process.argv.includes("--apply");
@@ -16,12 +26,52 @@ function maxRows(): number {
   return parsed;
 }
 
+function requestedRequestId(): string | null {
+  return process.env.PROFILE_WORKFLOW_REQUEST_ID?.trim() || null;
+}
+
+function requireRequestIdForManualPublish(): void {
+  if (
+    process.env.PROFILE_WORKFLOW_REQUIRE_REQUEST_ID === "true" &&
+    !requestedRequestId()
+  ) {
+    throw new Error(
+      "手動publishではIMDB_PROFILE_WORKFLOWのrequest_idを指定してください",
+    );
+  }
+}
+
+async function validatePublishTarget(
+  masterSheet: MasterSheet,
+  preview: PublishPreview,
+  values: WorkflowValues,
+): Promise<void> {
+  const [masterGroup, databaseGroup] = await Promise.all([
+    masterSheet.findBySlug(preview.slug),
+    findGroupBySlug(preview.slug),
+  ]);
+
+  const requestId = optionalCell(values.request_id);
+  validatePublishIdentity({
+    requestType: preview.requestType,
+    slug: preview.slug,
+    requestId,
+    masterExists: Boolean(masterGroup),
+    masterRequestId: masterGroup?.profileWorkflowRequestId ?? null,
+    databaseExists: Boolean(databaseGroup),
+  });
+}
+
 async function main(): Promise<void> {
   const apply = isApplyMode();
+  requireRequestIdForManualPublish();
   const sheet = await WorkflowSheet.fromEnvironment();
-  const approved = (await sheet.listRows())
-    .filter((row) => row.values.status?.trim().toLowerCase() === "approved")
-    .slice(0, maxRows());
+  let masterSheet: MasterSheet | null = null;
+  const approved = selectApprovedRows(
+    await sheet.listRows(),
+    requestedRequestId(),
+    maxRows(),
+  );
   console.log(`${apply ? "公開" : "公開プレビュー"}対象: ${approved.length}件`);
 
   for (const row of approved) {
@@ -36,6 +86,17 @@ async function main(): Promise<void> {
         status: "publishing",
         last_error: "",
       });
+      masterSheet ??= await MasterSheet.fromEnvironment();
+      await validatePublishTarget(masterSheet, preview, row.values);
+      const masterResult = await masterSheet.upsertFromWorkflow(
+        row.values,
+        preview.requestType,
+      );
+      console.log(
+        `MASTER転記: sheet=${process.env.GOOGLE_MASTER_SHEET_NAME?.trim() || "MASTER_test"} ` +
+          `row=${masterResult.rowNumber ?? "unknown"} slug=${preview.slug} ` +
+          `mode=${masterResult.created ? "append" : "update"}`,
+      );
       await publishApprovedRow(row.values);
       await sheet.patchRow(row.rowNumber, {
         status: "published",

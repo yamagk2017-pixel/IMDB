@@ -1,8 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import {
+  extractSpotifyArtistId,
   normalizeMonthForDatabase,
+  normalizeMembersJa,
   optionalCell,
+  parseWorkflowRequestType,
   sourceSchema,
+  type WorkflowRequestType,
   type WorkflowValues,
 } from "./schema.js";
 
@@ -20,6 +24,12 @@ export type ExistingGroupContext = {
   external_links: Record<string, string>;
 };
 
+export type GroupIdentity = {
+  id: string;
+  name_ja: string;
+  slug: string;
+};
+
 function createImdClient(key: string) {
   const url = process.env.SUPABASE_URL?.trim();
   if (!url) throw new Error("SUPABASE_URL が設定されていません");
@@ -35,7 +45,8 @@ export async function loadExistingGroup(
 ): Promise<ExistingGroupContext | null> {
   const readKey =
     process.env.SUPABASE_READ_KEY?.trim() ||
-    process.env.SUPABASE_ANON_KEY?.trim();
+    process.env.SUPABASE_ANON_KEY?.trim() ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!readKey || !process.env.SUPABASE_URL?.trim()) return null;
 
   const supabase = createImdClient(readKey);
@@ -50,7 +61,12 @@ export async function loadExistingGroup(
 
   const { data: groups, error: groupError } = await query;
   if (groupError) throw new Error(`既存グループの取得に失敗しました: ${groupError.message}`);
-  if (!groups || groups.length !== 1) return null;
+  if (!groups || groups.length === 0) return null;
+  if (groups.length > 1) {
+    throw new Error(
+      `DBに同じグループ名の候補が複数あります: ${groupName}`,
+    );
+  }
 
   const group = groups[0] as ExistingGroupContext["group"];
   const [profileResult, attributesResult, externalsResult] = await Promise.all([
@@ -67,7 +83,7 @@ export async function loadExistingGroup(
       .eq("locale", "ja"),
     supabase
       .from("external_ids")
-      .select("service,url")
+      .select("service,external_id,url")
       .eq("group_id", group.id),
   ]);
 
@@ -86,21 +102,51 @@ export async function loadExistingGroup(
       ),
     ),
     external_links: Object.fromEntries(
-      ((externalsResult.data ?? []) as Array<{ service: string; url: string | null }>)
-        .filter((item) => item.url)
-        .map(({ service, url }) => [service, url!]),
+      ((externalsResult.data ?? []) as Array<{
+        service: string;
+        external_id: string | null;
+        url: string | null;
+      }>)
+        .map(({ service, external_id, url }) => {
+          const value =
+            service === "spotify" && external_id
+              ? `https://open.spotify.com/artist/${external_id}`
+              : url;
+          return value ? ([service, value] as const) : null;
+        })
+        .filter((item): item is readonly [string, string] => item !== null),
     ),
   };
 }
 
+export async function findGroupBySlug(
+  slug: string,
+): Promise<GroupIdentity | null> {
+  const readKey =
+    process.env.SUPABASE_READ_KEY?.trim() ||
+    process.env.SUPABASE_ANON_KEY?.trim() ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!readKey || !process.env.SUPABASE_URL?.trim()) {
+    throw new Error("slug重複確認に必要なSupabase読み取り設定がありません");
+  }
+
+  const supabase = createImdClient(readKey);
+  const { data, error } = await supabase
+    .from("groups")
+    .select("id,name_ja,slug")
+    .eq("slug", slug.trim())
+    .limit(2);
+  if (error) throw new Error(`DBのslug確認に失敗しました: ${error.message}`);
+  if (!data || data.length === 0) return null;
+  if (data.length > 1) throw new Error(`DBに同じslugが複数あります: ${slug}`);
+  return data[0] as GroupIdentity;
+}
+
 function extractExternalId(service: string, url: string): string | null {
+  if (service === "spotify") return extractSpotifyArtistId(url);
   try {
     const parsed = new URL(url);
     const parts = parsed.pathname.split("/").filter(Boolean);
-    if (service === "spotify") {
-      const artistIndex = parts.indexOf("artist");
-      return artistIndex >= 0 ? parts[artistIndex + 1] ?? null : parts.at(-1) ?? null;
-    }
     if (["x", "instagram", "tiktok"].includes(service)) {
       return parts[0]?.replace(/^@/, "") ?? null;
     }
@@ -115,6 +161,136 @@ function extractExternalId(service: string, url: string): string | null {
     return null;
   } catch {
     return null;
+  }
+}
+
+export function externalIdentityForDatabase(
+  service: string,
+  value: string,
+): { external_id: string | null; url: string | null } {
+  const externalId = extractExternalId(service, value);
+  if (service === "spotify" && !externalId) {
+    throw new Error(`spotify_url からArtist IDを抽出できません: ${value}`);
+  }
+  return {
+    external_id: externalId,
+    url: service === "spotify" ? null : value,
+  };
+}
+
+async function verifyPublishedRow(
+  supabase: ReturnType<typeof createImdClient>,
+  groupId: string,
+  values: WorkflowValues,
+  preview: PublishPreview,
+): Promise<void> {
+  const month = optionalCell(values.activity_started_month);
+  const { data: group, error: groupError } = await supabase
+    .from("groups")
+    .select("id,slug,name_ja,activity_started_month,activity_started_basis")
+    .eq("id", groupId)
+    .single();
+  if (groupError || !group) {
+    throw new Error(
+      `公開後のgroups確認に失敗しました: ${groupError?.message ?? "unknown"}`,
+    );
+  }
+  if (group.slug !== preview.slug || group.name_ja !== preview.groupName) {
+    throw new Error("公開後のgroupsが承認内容と一致しません");
+  }
+  if (
+    month &&
+    (group.activity_started_month !== normalizeMonthForDatabase(month) ||
+      group.activity_started_basis !==
+        (optionalCell(values.activity_started_basis) ?? "unknown"))
+  ) {
+    throw new Error("公開後の活動開始情報が承認内容と一致しません");
+  }
+
+  const profile = optionalCell(values.profile_ja)!;
+  const { data: savedProfile, error: profileError } = await supabase
+    .from("group_profiles")
+    .select("body")
+    .eq("group_id", groupId)
+    .eq("locale", "ja")
+    .single();
+  if (profileError || savedProfile?.body !== profile) {
+    throw new Error(
+      `公開後の日本語プロフィール確認に失敗しました: ${profileError?.message ?? "値が一致しません"}`,
+    );
+  }
+
+  const expectedAttributes = [
+    ["members", normalizeMembersJa(values.members_ja)],
+    ["location", optionalCell(values.location_ja)],
+    ["agency", optionalCell(values.agency_ja)],
+  ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  if (expectedAttributes.length > 0) {
+    const { data, error } = await supabase
+      .from("group_attributes")
+      .select("key,value")
+      .eq("group_id", groupId)
+      .eq("locale", "ja")
+      .in(
+        "key",
+        expectedAttributes.map(([key]) => key),
+      );
+    if (error) {
+      throw new Error(`公開後の属性確認に失敗しました: ${error.message}`);
+    }
+    const saved = new Map(
+      ((data ?? []) as Array<{ key: string; value: string }>).map((item) => [
+        item.key,
+        item.value,
+      ]),
+    );
+    for (const [key, value] of expectedAttributes) {
+      if (saved.get(key) !== value) {
+        throw new Error(`公開後の属性が一致しません: ${key}`);
+      }
+    }
+  }
+
+  const expectedExternals = [
+    ["website", optionalCell(values.website_url)],
+    ["x", optionalCell(values.x_url)],
+    ["instagram", optionalCell(values.instagram_url)],
+    ["tiktok", optionalCell(values.tiktok_url)],
+    ["youtube_channel", optionalCell(values.youtube_url)],
+    ["spotify", optionalCell(values.spotify_url)],
+    ["schedule", optionalCell(values.calendar_url)],
+    ["ticketdive", optionalCell(values.ticketdive_url)],
+  ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  if (expectedExternals.length > 0) {
+    const { data, error } = await supabase
+      .from("external_ids")
+      .select("service,external_id,url")
+      .eq("group_id", groupId)
+      .in(
+        "service",
+        expectedExternals.map(([service]) => service),
+      );
+    if (error) {
+      throw new Error(`公開後の外部URL確認に失敗しました: ${error.message}`);
+    }
+    const saved = new Map(
+      ((data ?? []) as Array<{
+        service: string;
+        external_id: string | null;
+        url: string | null;
+      }>).map((item) => [item.service, item]),
+    );
+    for (const [service, value] of expectedExternals) {
+      const expected = externalIdentityForDatabase(service, value);
+      const actual = saved.get(service);
+      if (
+        !actual ||
+        actual.external_id !== expected.external_id ||
+        actual.url !== expected.url
+      ) {
+        throw new Error(`公開後の外部URLが一致しません: ${service}`);
+      }
+    }
   }
 }
 
@@ -167,10 +343,12 @@ function validateEvidence(values: WorkflowValues): void {
 export type PublishPreview = {
   slug: string;
   groupName: string;
+  requestType: WorkflowRequestType;
   fields: string[];
 };
 
 export function previewPublish(values: WorkflowValues): PublishPreview {
+  const requestType = parseWorkflowRequestType(values.request_type);
   const slug = optionalCell(values.group_slug);
   const groupName = optionalCell(values.group_name);
   const profile = optionalCell(values.profile_ja);
@@ -191,6 +369,8 @@ export function previewPublish(values: WorkflowValues): PublishPreview {
   ) {
     throw new Error(`activity_started_basis が許容値ではありません: ${basis}`);
   }
+  const month = optionalCell(values.activity_started_month);
+  if (month) normalizeMonthForDatabase(month);
   for (const field of [
     "website_url",
     "x_url",
@@ -203,6 +383,14 @@ export function previewPublish(values: WorkflowValues): PublishPreview {
   ] as const) {
     const url = optionalCell(values[field]);
     if (!url) continue;
+    if (field === "spotify_url") {
+      if (!extractSpotifyArtistId(url)) {
+        throw new Error(
+          `spotify_url はSpotify Artist IDまたはアーティストURLにしてください: ${url}`,
+        );
+      }
+      continue;
+    }
     try {
       const parsed = new URL(url);
       if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
@@ -229,7 +417,7 @@ export function previewPublish(values: WorkflowValues): PublishPreview {
   ] as const) {
     if (optionalCell(values[field])) fields.push(field);
   }
-  return { slug, groupName, fields };
+  return { slug, groupName, requestType, fields };
 }
 
 export async function publishApprovedRow(values: WorkflowValues): Promise<PublishPreview> {
@@ -275,7 +463,10 @@ export async function publishApprovedRow(values: WorkflowValues): Promise<Publis
     ["location", "location_ja"],
     ["agency", "agency_ja"],
   ] as const) {
-    const value = optionalCell(values[column]);
+    const value =
+      key === "members"
+        ? normalizeMembersJa(values[column])
+        : optionalCell(values[column]);
     if (!value) continue;
     const { error } = await supabase.from("group_attributes").upsert(
       { group_id: groupId, key, locale: "ja", value, updated_at: now },
@@ -296,17 +487,19 @@ export async function publishApprovedRow(values: WorkflowValues): Promise<Publis
   ] as const) {
     const url = optionalCell(values[column]);
     if (!url) continue;
+    const identity = externalIdentityForDatabase(service, url);
     const { error } = await supabase.from("external_ids").upsert(
       {
         group_id: groupId,
         service,
-        external_id: extractExternalId(service, url),
-        url,
+        ...identity,
       },
       { onConflict: "group_id,service" },
     );
     if (error) throw new Error(`external_ids(${service}) の更新に失敗しました: ${error.message}`);
   }
+
+  await verifyPublishedRow(supabase, groupId, values, preview);
 
   return preview;
 }

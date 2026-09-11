@@ -12,6 +12,7 @@
     "test": "tsx --test script/**/*.test.ts",
     "profile:sheet:setup": "tsx script/profile_workflow/setup_sheet.ts",
     "profile:generate": "tsx script/profile_workflow/generate.ts",
+    "profile:codex:validate": "tsx script/profile_workflow/codex.ts",
     "profile:publish": "tsx script/profile_workflow/publish.ts"
   },
   "keywords": [],

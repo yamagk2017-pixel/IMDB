@@ -2,11 +2,30 @@
 
 ## 目的
 
-Googleスプレッドシートへグループ名を入力すると、GitHub ActionsからGoogle Search付きのGemini APIを実行し、日本語プロフィールと不足項目の調査結果を確認用の行へ書き戻します。人が `approved` にした行だけをSupabaseへ反映します。
+日本語プロフィールと不足項目を調査し、確認用の行へ書き戻します。生成は、CodexチャットからCodex自身が行う方法と、GoogleスプレッドシートからGoogle Search付きのGemini APIへ依頼する従来方法の2通りです。人が `approved` にした行だけを正本の `MASTER_test` へ転記し、その後Supabaseへ反映します。
 
-CSVの出力とローカルPCでのコマンド実行は不要です。
+自動公開ではCSVの出力とローカルPCでのコマンド実行は不要です。一方、従来の `MASTER_test` → CSV出力 → `script/import_master.ts` という手動フローも維持します。
 
 ## 処理の境界
+
+生成には2つの入口があります。どちらも `review` 以降は同じ承認・公開処理を使います。
+
+### Codexチャット起点（Gemini APIを使わない）
+
+```text
+「◯◯というアイドルグループのプロフィールを作って」
+  -> CodexがWeb調査・原稿生成・URL確認
+  -> 構造と根拠をローカル検証
+  -> Google Sheet (review)
+  -> 人が確認・修正して approved
+  -> GitHub Actions
+  -> MASTER_test (upsert by slug)
+  -> Supabase (published)
+```
+
+この入口ではCodexが直接生成するため、Gemini APIリクエストおよびGeminiの検索グラウンディング料金は発生しません。Codex自体のプラン・利用量は通常どおり消費します。プロジェクトスキル `.agents/skills/imdb-profile/SKILL.md` が、チャット上の依頼を調査と確認用行の作成へ変換します。Codexは安全のため `review` までしか進めません。
+
+### スプレッドシート起点（既存のGemini経路）
 
 ```text
 Google Sheet (queued)
@@ -15,14 +34,15 @@ Google Sheet (queued)
   -> Google Sheet (review)
   -> 人が確認・修正して approved
   -> GitHub Actions
+  -> MASTER_test (upsert by slug)
   -> Supabase (published)
 ```
 
 - GeminiにはSupabaseの書き込みキーを渡しません。
 - 空の調査結果で既存DB値を削除しません。
 - プロフィール本文、出典数、URL、slug、日付形式を公開前に検証します。
-- DB更新は冪等なupsertです。途中で失敗した行は `publish_error` になり、修正後に `approved` へ戻して再実行できます。
-- 既存のCSVインポーターとは独立して動作します。
+- `MASTER_test` への転記とDB更新は冪等なupsertです。途中で失敗した行は `publish_error` になり、修正後に `approved` へ戻して再実行できます。
+- 既存のCSVインポーターは、同じMASTER形式から引き続き実行できます。
 
 ## 1. Google側の準備
 
@@ -35,7 +55,7 @@ Google Sheet (queued)
 base64 < service-account.json | tr -d '\n'
 ```
 
-既存のMASTERシートと同じスプレッドシートを使えます。自動処理は既定で `IMDB_PROFILE_WORKFLOW` という別タブだけを操作します。
+既存のMASTERシートと同じスプレッドシートを使います。生成・確認は既定で `IMDB_PROFILE_WORKFLOW`、承認後の正本への転記は `MASTER_test` タブを操作します。
 
 ## 2. Gemini APIの準備
 
@@ -67,6 +87,7 @@ APIキーはスプレッドシート、ソースコード、チャットへ貼�
 | 名前 | 推奨初期値 | 用途 |
 |---|---|---|
 | `GOOGLE_WORKFLOW_SHEET_NAME` | `IMDB_PROFILE_WORKFLOW` | 操作対象タブ |
+| `GOOGLE_MASTER_SHEET_NAME` | `MASTER_test` | 承認後の転記先となる正本タブ |
 | `GEMINI_MODEL` | `gemini-3.8-flash` | 調査と構造化出力に使うモデル |
 | `GEMINI_FALLBACK_MODEL` | `gemini-3.6-flash` | 429・503・タイムアウト時に切り替える予備モデル |
 | `IMDB_PROFILE_PUBLISH_ENABLED` | `false` | `true` のときだけSupabase公開ジョブを有効化 |
@@ -92,11 +113,14 @@ npm run profile:sheet:setup
 | 列 | 入力内容 |
 |---|---|
 | `group_name` | 必須。例: `Tri-Sphere` |
-| `group_slug` | 既存グループは入力推奨。空なら完全一致検索またはGemini提案値を使用 |
-| `request_type` | 任意。`create` / `update`。空でも可 |
+| `group_slug` | 新規登録では任意。更新では通常空欄で可 |
+| `request_type` | 必須。新規登録は `create`、更新は `update` |
 | `status` | `queued` |
 
 30分ごとの定期実行、または `mode=generate` の手動実行で処理されます。
+
+- `create`: slugを入力した場合は、MASTERとDBの両方で未使用のときだけ生成します。空欄の場合はGeminiの提案slugを検査し、使用済みなら `-2`、`-3` のような未使用slugへ自動調整します。同名の既存グループがある場合は、重複登録を防ぐため停止します。
+- `update`: slugが空欄なら `group_name` の完全一致でMASTERとDBを検索し、一意に特定できたslugを自動入力します。0件または複数候補の場合だけ、slugの確認が必要です。
 
 成功すると `status=review` になり、次の情報が行へ入ります。
 
@@ -112,11 +136,13 @@ npm run profile:sheet:setup
 
 カレンダーとTicketDiveは、Geminiの検索結果、既存DB値、公式ページ内のリンク・iframeから候補を集め、実在性と対象グループとの対応を機械検証します。確認できない場合は空欄にし、`warnings_json` に `calendar_url:` または `ticketdive_url:` で始まる理由を残します。
 
+`members_ja` は生成時、MASTER転記時、DB公開時に全角スラッシュ（`／`）区切りへ統一します。Spotifyは `IMDB_PROFILE_WORKFLOW.spotify_url` に確認用のアーティストURLを保持し、`MASTER_test.spotifyId` とDBの `external_ids.external_id` にはArtist IDだけを保存します。DBのSpotify `url` は保存しません。
+
 ## 7. 確認して公開する
 
 1. `profile_ja` と各項目を直接修正します。
 2. `sources_json` と `field_evidence_json` で根拠を確認します。
-3. `group_slug` が正しい既存グループを指すか確認します。
+3. `group_slug` が正しい既存グループを指すか確認します。このslugをキーに `MASTER_test` の行が更新または追加されます。
 4. `status` を `approved` にします。
 
 公開機能を有効にする前は、ローカルでプレビューできます。
@@ -131,7 +157,9 @@ npm run profile:publish
 npm run profile:publish -- --apply
 ```
 
-GitHub Actionsで公開する場合は、5〜10組の検証後にRepository Variable `IMDB_PROFILE_PUBLISH_ENABLED` を `true` にします。承認済み行は定期実行後に `published` になります。
+GitHub Actionsで1行だけ手動公開する場合は、`mode=publish` と対象行の `request_id` を指定します。この手動公開は `IMDB_PROFILE_PUBLISH_ENABLED=false` のままでも実行できます。対象をrequest_idで限定するため、別の承認済み行を誤って同時公開しません。
+
+定期的な自動公開は、5〜10組の検証後にRepository Variable `IMDB_PROFILE_PUBLISH_ENABLED` を `true` にします。承認済み行は `MASTER_test` へ転記され、DBへの登録内容を読み戻して一致を確認した後に `published` になります。MASTERに必要な管理列がない場合は、既存列を保持したまま末尾へ追加します。既存行の任意項目は、承認用シートが空欄の場合に削除しません。
 
 ## 8. ステータス一覧
 
@@ -140,11 +168,11 @@ GitHub Actionsで公開する場合は、5〜10組の検証後にRepository Vari
 | `queued` | 生成待ち |
 | `generating` | Geminiが処理中 |
 | `review` | 人による確認待ち |
-| `approved` | DB公開を承認済み |
-| `publishing` | DB更新中 |
-| `published` | DB更新完了 |
+| `approved` | MASTER転記とDB公開を承認済み |
+| `publishing` | MASTER転記・DB更新中 |
+| `published` | MASTER転記・DB更新完了 |
 | `generation_error` | 生成・検証失敗 |
-| `publish_error` | DB更新失敗 |
+| `publish_error` | MASTER転記またはDB更新失敗 |
 
 ## 9. 精度検証
 

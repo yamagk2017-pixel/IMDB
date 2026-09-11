@@ -1,15 +1,28 @@
 import "./env.js";
 import { randomUUID } from "node:crypto";
-import { loadExistingGroup } from "./database.js";
+import {
+  findGroupBySlug,
+  loadExistingGroup,
+  type ExistingGroupContext,
+} from "./database.js";
 import { generateProfileWithGemini } from "./gemini.js";
 import { resolveResearchExternalLinks } from "./external_links.js";
+import { findAvailableSlug, resolveUpdateSlug } from "./operation.js";
 import { buildResearchPrompt } from "./prompt.js";
 import {
   composeProfileJa,
+  normalizeMembersJa,
   optionalCell,
+  parseWorkflowRequestType,
   type WorkflowValues,
 } from "./schema.js";
-import { WorkflowSheet, type WorkflowRow } from "./sheets.js";
+import { MasterSheet, WorkflowSheet, type WorkflowRow } from "./sheets.js";
+
+type ResolvedRequest = {
+  requestType: "create" | "update";
+  groupSlug: string | null;
+  existing: ExistingGroupContext | null;
+};
 
 function maxRows(): number {
   const argument = process.argv.find((value) => value.startsWith("--max-rows="));
@@ -29,7 +42,88 @@ function json(value: unknown): string {
   return JSON.stringify(value);
 }
 
-async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void> {
+async function resolveRequest(
+  masterSheet: MasterSheet,
+  values: WorkflowRow["values"],
+  groupName: string,
+): Promise<ResolvedRequest> {
+  const requestType = parseWorkflowRequestType(values.request_type);
+  const requestedSlug = optionalCell(values.group_slug);
+
+  if (requestType === "create") {
+    if (requestedSlug) {
+      const [masterGroup, databaseGroup] = await Promise.all([
+        masterSheet.findBySlug(requestedSlug),
+        findGroupBySlug(requestedSlug),
+      ]);
+      if (masterGroup || databaseGroup) {
+        throw new Error(
+          `新規登録のslugは使用済みです: ${requestedSlug}`,
+        );
+      }
+    }
+
+    const [masterNameMatches, databaseNameMatch] = await Promise.all([
+      masterSheet.findByName(groupName),
+      loadExistingGroup(undefined, groupName),
+    ]);
+    if (masterNameMatches.length > 0 || databaseNameMatch) {
+      throw new Error(
+        `同じグループ名の登録が存在します。updateを選択してください: ${groupName}`,
+      );
+    }
+    return { requestType, groupSlug: requestedSlug, existing: null };
+  }
+
+  if (requestedSlug) {
+    const [masterGroup, databaseGroup] = await Promise.all([
+      masterSheet.findBySlug(requestedSlug),
+      loadExistingGroup(requestedSlug, groupName),
+    ]);
+    if (!masterGroup && !databaseGroup) {
+      throw new Error(`更新対象のslugが見つかりません: ${requestedSlug}`);
+    }
+    return {
+      requestType,
+      groupSlug: requestedSlug,
+      existing: databaseGroup,
+    };
+  }
+
+  const [masterMatches, databaseMatch] = await Promise.all([
+    masterSheet.findByName(groupName),
+    loadExistingGroup(undefined, groupName),
+  ]);
+  const groupSlug = resolveUpdateSlug({
+    groupName,
+    masterSlugs: masterMatches.map((match) => match.slug),
+    databaseSlug: databaseMatch?.group.slug ?? null,
+  });
+  const existing =
+    databaseMatch?.group.slug === groupSlug
+      ? databaseMatch
+      : await loadExistingGroup(groupSlug, groupName);
+  return { requestType, groupSlug, existing };
+}
+
+async function uniqueGeneratedSlug(
+  masterSheet: MasterSheet,
+  suggestedSlug: string,
+): Promise<{ slug: string; adjusted: boolean }> {
+  return findAvailableSlug(suggestedSlug, async (slug) => {
+    const [masterGroup, databaseGroup] = await Promise.all([
+      masterSheet.findBySlug(slug),
+      findGroupBySlug(slug),
+    ]);
+    return Boolean(masterGroup || databaseGroup);
+  });
+}
+
+async function generateOne(
+  sheet: WorkflowSheet,
+  masterSheet: MasterSheet,
+  row: WorkflowRow,
+): Promise<void> {
   const groupName = optionalCell(row.values.group_name);
   if (!groupName) {
     await sheet.patchRow(row.rowNumber, {
@@ -49,7 +143,8 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
   });
 
   try {
-    const existing = await loadExistingGroup(row.values.group_slug, groupName);
+    const resolved = await resolveRequest(masterSheet, row.values, groupName);
+    const existing = resolved.existing;
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) throw new Error("GEMINI_API_KEY が設定されていません");
     const modelId = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
@@ -58,8 +153,8 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
     const prompt = buildResearchPrompt({
       requestId,
       groupName,
-      requestedSlug: optionalCell(row.values.group_slug),
-      requestType: optionalCell(row.values.request_type),
+      requestedSlug: resolved.groupSlug,
+      requestType: resolved.requestType,
       existing,
     });
 
@@ -79,15 +174,25 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
       requestedName: groupName,
       existingLinks: existing?.external_links,
     });
+    const generatedSlug =
+      resolved.requestType === "create" && !resolved.groupSlug
+        ? await uniqueGeneratedSlug(masterSheet, result.suggested_slug)
+        : { slug: resolved.groupSlug!, adjusted: false };
+    const warnings = [...result.warnings];
+    if (generatedSlug.adjusted) {
+      warnings.push(
+        `slug: 提案値 ${result.suggested_slug} は使用済みのため ${generatedSlug.slug} に変更しました`,
+      );
+    }
     const patch: WorkflowValues = {
       status: "review",
       group_name: result.canonical_name_ja,
-      group_slug: optionalCell(row.values.group_slug) ?? existing?.group.slug ?? result.suggested_slug,
-      request_type: existing ? "update" : "create",
+      group_slug: generatedSlug.slug,
+      request_type: resolved.requestType,
       profile_ja: composeProfileJa(result),
       overview_ja: result.overview_ja,
       musical_style_ja: result.musical_style_ja,
-      members_ja: result.attributes.members_ja ?? "",
+      members_ja: normalizeMembersJa(result.attributes.members_ja) ?? "",
       location_ja: result.attributes.location_ja ?? "",
       agency_ja: result.attributes.agency_ja ?? "",
       activity_started_month: result.attributes.activity_started_month ?? "",
@@ -103,7 +208,7 @@ async function generateOne(sheet: WorkflowSheet, row: WorkflowRow): Promise<void
       sources_json: json(result.sources),
       field_evidence_json: json(result.field_evidence),
       confidence_json: json(result.confidence),
-      warnings_json: json(result.warnings),
+      warnings_json: json(warnings),
       identity_notes: result.identity_notes,
       model: generated.model,
       run_id: generated.requestId ?? "",
@@ -130,7 +235,9 @@ async function main(): Promise<void> {
     .filter((row) => row.values.status?.trim().toLowerCase() === "queued")
     .slice(0, maxRows());
   console.log(`生成対象: ${queued.length}件`);
-  for (const row of queued) await generateOne(sheet, row);
+  if (queued.length === 0) return;
+  const masterSheet = await MasterSheet.fromEnvironment();
+  for (const row of queued) await generateOne(sheet, masterSheet, row);
 }
 
 main().catch((error) => {
