@@ -20,7 +20,7 @@
   "license": "ISC",
   "dependencies": {
     "@google/genai": "^2.21.0",
-    "@supabase/supabase-js": "^2.84.0",
+    "@supabase/supabase-js": "^2.115.0",
     "csv-parse": "7.0.2",
     "dotenv": "^17.2.3",
     "googleapis": "178.1.1",
