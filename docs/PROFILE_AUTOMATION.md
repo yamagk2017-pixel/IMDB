@@ -138,6 +138,8 @@ npm run profile:sheet:setup
 
 `members_ja` は生成時、MASTER転記時、DB公開時に全角スラッシュ（`／`）区切りへ統一します。Spotifyは `IMDB_PROFILE_WORKFLOW.spotify_url` に確認用のアーティストURLを保持し、`MASTER_test.spotifyId` とDBの `external_ids.external_id` にはArtist IDだけを保存します。DBのSpotify `url` は保存しません。
 
+Spotify Artist URLは必須確認項目です。取得できない場合でもレビュー行は作成しますが、`warnings_json` に `spotify_url:` から始まる警告、`identity_notes` と `review_note` に `【要対応】Spotify Artist URL未取得。` を記録し、公開前の補完が必要なことを明示します。
+
 ## 7. 確認して公開する
 
 1. `profile_ja` と各項目を直接修正します。

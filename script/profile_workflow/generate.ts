@@ -14,6 +14,7 @@ import {
   normalizeMembersJa,
   optionalCell,
   parseWorkflowRequestType,
+  reviewNoteForResearch,
   type WorkflowValues,
 } from "./schema.js";
 import { MasterSheet, WorkflowSheet, type WorkflowRow } from "./sheets.js";
@@ -212,6 +213,7 @@ async function generateOne(
       identity_notes: result.identity_notes,
       model: generated.model,
       run_id: generated.requestId ?? "",
+      review_note: `Gemini APIが調査・生成。${reviewNoteForResearch(result)}`,
       generated_at: new Date().toISOString(),
       last_error: "",
     };

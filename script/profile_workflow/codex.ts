@@ -6,6 +6,7 @@ import {
   WORKFLOW_REQUEST_TYPES,
   composeProfileJa,
   normalizeMembersJa,
+  reviewNoteForResearch,
   researchResultSchema,
   type WorkflowValues,
 } from "./schema.js";
@@ -80,7 +81,7 @@ export function buildCodexWorkflowOutput(
     model: "codex-chat",
     agent_id: options.agentId ?? "codex",
     run_id: options.runId ?? "",
-    review_note: "Codexが調査・生成。内容確認後にstatusをapprovedへ変更してください。",
+    review_note: `Codexが調査・生成。${reviewNoteForResearch(result)}`,
     last_error: "",
     requested_at: timestamp,
     generated_at: timestamp,

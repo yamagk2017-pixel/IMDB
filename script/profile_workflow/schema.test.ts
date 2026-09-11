@@ -5,6 +5,7 @@ import {
   previewPublish,
 } from "./database.js";
 import {
+  SPOTIFY_MISSING_IDENTITY_ALERT,
   composeProfileJa,
   extractSpotifyArtistId,
   normalizeMonthForDatabase,
@@ -92,10 +93,57 @@ const validResult = {
 test("コードフェンス付きJSONを検証して読み込める", () => {
   const parsed = parseResearchJson(`\`\`\`json\n${JSON.stringify(validResult)}\n\`\`\``);
   assert.equal(parsed.suggested_slug, "test-group");
+  assert.ok(
+    parsed.warnings.some((warning) => warning.startsWith("spotify_url:")),
+  );
+  assert.ok(parsed.identity_notes.startsWith(SPOTIFY_MISSING_IDENTITY_ALERT));
   assert.equal(
     composeProfileJa(parsed),
     `概要\n${validResult.overview_ja}\n\n音楽性\n${validResult.musical_style_ja}`,
   );
+});
+
+test("Spotify未取得時は警告とidentity_notesのアラートを自動補完する", () => {
+  const parsed = parseResearchJson(JSON.stringify(validResult));
+  assert.ok(
+    parsed.warnings.some((warning) =>
+      warning.includes("必須項目のSpotify Artist URL"),
+    ),
+  );
+  assert.match(parsed.identity_notes, /^【要対応】Spotify Artist URL未取得。/);
+});
+
+test("言語指定付きSpotify Artist URLを正規URLへ変換する", () => {
+  const withSpotify = structuredClone(validResult) as Omit<
+    typeof validResult,
+    "external_links" | "field_evidence"
+  > & {
+    external_links: Omit<
+      typeof validResult.external_links,
+      "spotify_url"
+    > & { spotify_url: string | null };
+    field_evidence: Record<string, string[]>;
+  };
+  const localizedUrl =
+    "https://open.spotify.com/intl-ja/artist/4OKkDV8G2rTARx6BG8uiL8";
+  withSpotify.external_links.spotify_url = localizedUrl;
+  withSpotify.sources.push({
+    url: localizedUrl,
+    title: "KIRA:MINA",
+    publisher: "Spotify",
+    accessed_at: "2026-09-11",
+    source_type: "platform",
+    supports: ["external_links.spotify_url"],
+  });
+  withSpotify.field_evidence["external_links.spotify_url"] = [localizedUrl];
+
+  const parsed = parseResearchJson(JSON.stringify(withSpotify));
+  assert.equal(
+    parsed.external_links.spotify_url,
+    "https://open.spotify.com/artist/4OKkDV8G2rTARx6BG8uiL8",
+  );
+  assert.ok(!parsed.identity_notes.startsWith(SPOTIFY_MISSING_IDENTITY_ALERT));
+  assert.ok(!parsed.warnings.some((warning) => warning.startsWith("spotify_url:")));
 });
 
 test("sourcesにない根拠URLを拒否する", () => {

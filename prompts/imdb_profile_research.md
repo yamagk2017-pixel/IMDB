@@ -48,11 +48,14 @@
 - `agency_ja` は現在の所属・運営を記載する。
 - `activity_started_month` は `YYYY-MM`。根拠に応じて basis を `formation`、`debut`、`first_show`、`relaunch`、`unknown` から選ぶ。
 - 外部URLは対象グループ本人のページだけを返す。
+- `spotify_url` は必須確認項目。Spotifyの本人のアーティストページを調査し、`https://open.spotify.com/artist/<Artist ID>` の完全URLを返す。アルバム・楽曲・検索ページのURLは返さない。
+- Spotify Artist URLを確認できない場合だけ `spotify_url` を `null` にする。その場合は `warnings` に `spotify_url:` から始まる理由を書き、`identity_notes` の冒頭にも `【要対応】Spotify Artist URL未取得。` と記載する。
+- `spotify_url` を返す場合は、確認根拠を `sources` と `field_evidence.external_links.spotify_url` に含める。
 - `calendar_url` は、公式サイトや公式SNSから本人のものと確認できる公開カレンダー、または公式スケジュールページのURLを返す。Google CalendarやTimeTreeなどの公開カレンダーも可とする。
 - `calendar_url` はグループ名と「schedule」「calendar」「Google Calendar」「TimeTree」を組み合わせて検索し、公式サイトのナビゲーション、リンク、埋め込みiframeも確認する。
 - `ticketdive_url` は、対象グループのTicketDiveアーティストページ（`https://ticketdive.com/artist/...`）だけを返す。`"グループ名" site:ticketdive.com/artist/` でも検索し、検索結果に表示されたURLを一文字も変更せず使う。個別公演のチケット販売ページは返さない。
 - `calendar_url` と `ticketdive_url` は推測で組み立てず、本人のページだと確認できない場合は `null` にする。値を返す場合は、確認根拠を `sources` と `field_evidence` に含める。根拠キーはそれぞれ `external_links.calendar_url`、`external_links.ticketdive_url` とする。
-- `warnings` は問題ごとに1要素へ分ける。外部リンクを確認できなかった場合は、`calendar_url:`、`ticketdive_url:` のように対象キーから書き始める。
+- `warnings` は問題ごとに1要素へ分ける。外部リンクを確認できなかった場合は、`spotify_url:`、`calendar_url:`、`ticketdive_url:` のように対象キーから書き始める。
 
 ## 出力形式
 
@@ -63,7 +66,7 @@
   "canonical_name_ja": "正式な日本語名",
   "suggested_slug": "lowercase-ascii-slug",
   "identity_confirmed": true,
-  "identity_notes": "同一性を確認した根拠の短い説明",
+  "identity_notes": "同一性を確認した根拠の短い説明。Spotify未取得時は冒頭に【要対応】Spotify Artist URL未取得。を記載",
   "overview_ja": "概要本文",
   "musical_style_ja": "音楽性本文",
   "attributes": {
@@ -97,6 +100,7 @@
     "overview_ja": ["https://..."],
     "musical_style_ja": ["https://..."],
     "attributes.members_ja": ["https://..."],
+    "external_links.spotify_url": ["https://open.spotify.com/artist/..."],
     "external_links.calendar_url": ["https://..."],
     "external_links.ticketdive_url": ["https://ticketdive.com/artist/..."]
   },

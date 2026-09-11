@@ -28,7 +28,8 @@ description: Codex自身が女性アイドルグループをWeb調査し、日�
    - 同名グループを混同しない。
    - `overview_ja` と `musical_style_ja` は本文だけを返す。`profile_ja` への変換時に、それぞれの冒頭へ `概要` と `音楽性` の見出しが自動で付く。
    - `members_ja` は `／` 区切り。
-   - Spotifyは `https://open.spotify.com/artist/<Artist ID>` の完全URL。
+   - Spotifyは必須確認項目。`https://open.spotify.com/artist/<Artist ID>` の完全URLを取得する。アルバム・楽曲・検索ページは使わない。
+   - Spotify Artist URLを確認できない場合はnullにし、`warnings` に `spotify_url:` から始まる理由、`identity_notes` の冒頭に `【要対応】Spotify Artist URL未取得。` を記載する。レビュー行の `review_note` にも自動で要対応アラートが入る。
    - calendar/TicketDiveを確認できなければnullにし、`warnings` にそれぞれ `calendar_url:`、`ticketdive_url:` から始まる理由を書く。
    - `sources` は確認した直接URLを2件以上含め、`field_evidence` のURLをすべて `sources` にも含める。
 7. 次の包み形式で `.codex-tmp/profile-result.json` を作成する。

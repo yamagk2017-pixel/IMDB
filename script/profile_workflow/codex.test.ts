@@ -60,6 +60,9 @@ function validInput(): unknown {
         musical_style_ja: [
           "https://open.spotify.com/artist/0123456789ABCDEFGHIJKL",
         ],
+        "external_links.spotify_url": [
+          "https://open.spotify.com/artist/0123456789ABCDEFGHIJKL",
+        ],
       },
       confidence: { identity: 0.98, profile: 0.85, attributes: 0.8 },
       warnings: [
@@ -108,5 +111,35 @@ test("Spotifyのアーティストページ以外を拒否する", () => {
   assert.throws(
     () => buildCodexWorkflowOutput(input),
     /Spotifyの公式アーティストページURL/,
+  );
+});
+
+test("Spotify未取得時はレビュー行へ目立つアラートを残す", () => {
+  const input = validInput() as {
+    research: {
+      external_links: { spotify_url: string | null };
+      identity_notes: string;
+      warnings: string[];
+    };
+  };
+  input.research.external_links.spotify_url = null;
+  input.research.identity_notes = "公式サイトで同一性を確認";
+  input.research.warnings = [
+    "calendar_url: 公式カレンダーを確認できませんでした",
+    "ticketdive_url: アーティストページを確認できませんでした",
+  ];
+
+  const output = buildCodexWorkflowOutput(input);
+  assert.match(
+    output.values.warnings_json ?? "",
+    /必須項目のSpotify Artist URL/,
+  );
+  assert.match(
+    output.values.identity_notes ?? "",
+    /^【要対応】Spotify Artist URL未取得。/,
+  );
+  assert.match(
+    output.values.review_note ?? "",
+    /【要対応】Spotify Artist URL未取得。/,
   );
 });

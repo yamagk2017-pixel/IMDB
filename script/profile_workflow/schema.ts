@@ -55,6 +55,19 @@ export const WORKFLOW_COLUMNS = [
 export type WorkflowColumn = (typeof WORKFLOW_COLUMNS)[number];
 export type WorkflowValues = Partial<Record<WorkflowColumn, string>>;
 
+export const SPOTIFY_MISSING_WARNING =
+  "spotify_url: 必須項目のSpotify Artist URLを確認できなかったため空欄です。公開前に取得・入力してください。";
+export const SPOTIFY_MISSING_IDENTITY_ALERT =
+  "【要対応】Spotify Artist URL未取得。";
+
+export function reviewNoteForResearch(result: {
+  external_links: { spotify_url: string | null };
+}): string {
+  return result.external_links.spotify_url
+    ? "内容確認後にstatusをapprovedへ変更してください。"
+    : "【要対応】Spotify Artist URL未取得。warnings_jsonとidentity_notesを確認し、Spotify Artist URLを入力してください。内容確認後にstatusをapprovedへ変更してください。";
+}
+
 const nullableText = z.union([z.string().trim().min(1), z.null()]);
 const nullableUrl = z.union([z.string().url().startsWith("http"), z.null()]);
 
@@ -161,9 +174,12 @@ export const researchResultSchema = z
       }
     }
 
-    for (const field of ["calendar_url", "ticketdive_url"] as const) {
+    for (const field of ["spotify_url", "calendar_url", "ticketdive_url"] as const) {
       if (!value.external_links[field]) {
-        if (!value.warnings.some((warning) => warning.startsWith(`${field}:`))) {
+        if (
+          field !== "spotify_url" &&
+          !value.warnings.some((warning) => warning.startsWith(`${field}:`))
+        ) {
           context.addIssue({
             code: "custom",
             path: ["warnings"],
@@ -183,23 +199,12 @@ export const researchResultSchema = z
     }
 
     const spotifyUrl = value.external_links.spotify_url;
-    if (spotifyUrl) {
-      const parsed = new URL(spotifyUrl);
-      const parts = parsed.pathname.split("/").filter(Boolean);
-      if (
-        !["open.spotify.com", "www.open.spotify.com"].includes(
-          parsed.hostname.toLowerCase(),
-        ) ||
-        parts[0]?.toLowerCase() !== "artist" ||
-        !parts[1] ||
-        !/^[A-Za-z0-9]+$/.test(parts[1])
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: ["external_links", "spotify_url"],
-          message: "Spotifyの公式アーティストページURLが必要です",
-        });
-      }
+    if (spotifyUrl && !extractSpotifyArtistId(spotifyUrl)) {
+      context.addIssue({
+        code: "custom",
+        path: ["external_links", "spotify_url"],
+        message: "Spotifyの公式アーティストページURLが必要です",
+      });
     }
 
     if (!value.identity_confirmed) {
@@ -209,6 +214,38 @@ export const researchResultSchema = z
         message: "グループ同定に失敗した結果はレビューへ送れません",
       });
     }
+  })
+  .transform((value) => {
+    const spotifyUrl = canonicalSpotifyArtistUrl(
+      value.external_links.spotify_url,
+    );
+    if (spotifyUrl) {
+      return {
+        ...value,
+        external_links: {
+          ...value.external_links,
+          spotify_url: spotifyUrl,
+        },
+      };
+    }
+
+    const warnings = [...value.warnings];
+    if (!warnings.some((warning) => warning.startsWith("spotify_url:"))) {
+      if (warnings.length < 30) warnings.push(SPOTIFY_MISSING_WARNING);
+      else warnings[warnings.length - 1] = SPOTIFY_MISSING_WARNING;
+    }
+
+    const identityNotes = value.identity_notes.startsWith(
+      SPOTIFY_MISSING_IDENTITY_ALERT,
+    )
+      ? value.identity_notes
+      : `${SPOTIFY_MISSING_IDENTITY_ALERT}${value.identity_notes}`.slice(0, 1_000);
+
+    return {
+      ...value,
+      identity_notes: identityNotes,
+      warnings,
+    };
   });
 
 export type ResearchResult = z.infer<typeof researchResultSchema>;
@@ -306,4 +343,11 @@ export function extractSpotifyArtistId(
   }
 
   return /^[A-Za-z0-9]+$/.test(candidate) ? candidate : null;
+}
+
+export function canonicalSpotifyArtistUrl(
+  value: string | null | undefined,
+): string | null {
+  const artistId = extractSpotifyArtistId(value);
+  return artistId ? `https://open.spotify.com/artist/${artistId}` : null;
 }
