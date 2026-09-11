@@ -214,7 +214,7 @@ export const researchResultSchema = z
 export type ResearchResult = z.infer<typeof researchResultSchema>;
 
 export function composeProfileJa(result: ResearchResult): string {
-  return `${result.overview_ja}\n\n${result.musical_style_ja}`;
+  return `概要\n${result.overview_ja}\n\n音楽性\n${result.musical_style_ja}`;
 }
 
 export function parseResearchJson(raw: string): ResearchResult {

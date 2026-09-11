@@ -80,6 +80,10 @@ test("Codex調査結果をreview行へ変換する", () => {
   assert.equal(output.values.model, "codex-chat");
   assert.equal(output.values.members_ja, "山田花子／佐藤春");
   assert.equal(output.values.group_slug, "test-idol");
+  assert.equal(
+    output.values.profile_ja,
+    `概要\n${overview}\n\n音楽性\n${musicalStyle}`,
+  );
   assert.equal(output.ordered_values.length, output.columns.length);
   assert.equal(output.columns.length, 35);
 });

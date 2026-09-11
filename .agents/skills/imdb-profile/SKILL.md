@@ -26,6 +26,7 @@ description: Codex自身が女性アイドルグループをWeb調査し、日�
 5. CodexのWeb検索を使って対象を調査する。公式サイト・公式SNS・運営・公式配信ページなど一次情報を優先し、検索結果の抜粋だけを根拠にしない。リンク先本文を確認する。
 6. 生成仕様どおりの `research` JSONを作る。特に次を守る。
    - 同名グループを混同しない。
+   - `overview_ja` と `musical_style_ja` は本文だけを返す。`profile_ja` への変換時に、それぞれの冒頭へ `概要` と `音楽性` の見出しが自動で付く。
    - `members_ja` は `／` 区切り。
    - Spotifyは `https://open.spotify.com/artist/<Artist ID>` の完全URL。
    - calendar/TicketDiveを確認できなければnullにし、`warnings` にそれぞれ `calendar_url:`、`ticketdive_url:` から始まる理由を書く。

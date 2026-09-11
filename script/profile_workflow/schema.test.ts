@@ -92,7 +92,10 @@ const validResult = {
 test("コードフェンス付きJSONを検証して読み込める", () => {
   const parsed = parseResearchJson(`\`\`\`json\n${JSON.stringify(validResult)}\n\`\`\``);
   assert.equal(parsed.suggested_slug, "test-group");
-  assert.match(composeProfileJa(parsed), /\n\n/);
+  assert.equal(
+    composeProfileJa(parsed),
+    `概要\n${validResult.overview_ja}\n\n音楽性\n${validResult.musical_style_ja}`,
+  );
 });
 
 test("sourcesにない根拠URLを拒否する", () => {

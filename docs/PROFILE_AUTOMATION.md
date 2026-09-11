@@ -124,7 +124,7 @@ npm run profile:sheet:setup
 
 成功すると `status=review` になり、次の情報が行へ入ります。
 
-- `profile_ja`: DBへ登録する編集可能な本文
+- `profile_ja`: DBへ登録する編集可能な本文。`概要` と `音楽性` の見出し付きで生成されます
 - `overview_ja` / `musical_style_ja`: 生成時の内訳
 - メンバー、活動拠点、所属、活動開始月
 - 公式サイト・SNS・配信サービスURL・公式カレンダー・TicketDiveアーティストページ
