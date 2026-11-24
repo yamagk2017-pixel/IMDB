@@ -7,22 +7,18 @@ on:
         description: 実行する処理
         required: true
         type: choice
-        default: all
+        default: publish
         options:
-          - all
           - setup
-          - generate
           - publish
       max_rows:
         description: 1回に処理する最大行数
         required: true
-        default: "3"
+        default: "1"
       request_id:
         description: publish時に対象を1行へ限定するrequest_id
         required: false
         default: ""
-  schedule:
-    - cron: "17,47 * * * *"
 
 permissions:
   contents: read
@@ -50,37 +46,8 @@ jobs:
           GOOGLE_WORKFLOW_SPREADSHEET_ID: ${{ secrets.GOOGLE_WORKFLOW_SPREADSHEET_ID }}
           GOOGLE_WORKFLOW_SHEET_NAME: ${{ vars.GOOGLE_WORKFLOW_SHEET_NAME }}
 
-  generate:
-    if: >-
-      github.event_name == 'schedule' ||
-      inputs.mode == 'all' ||
-      inputs.mode == 'generate'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22.20.0"
-          cache: npm
-      - run: npm ci
-      - name: Generate profile drafts
-        run: npm run profile:generate -- --max-rows=${{ inputs.max_rows || '3' }}
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
-          GEMINI_FALLBACK_MODEL: ${{ vars.GEMINI_FALLBACK_MODEL }}
-          GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
-          GOOGLE_WORKFLOW_SPREADSHEET_ID: ${{ secrets.GOOGLE_WORKFLOW_SPREADSHEET_ID }}
-          GOOGLE_WORKFLOW_SHEET_NAME: ${{ vars.GOOGLE_WORKFLOW_SHEET_NAME }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_READ_KEY: ${{ secrets.SUPABASE_READ_KEY }}
-
   publish:
-    if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish') ||
-      ((github.event_name == 'schedule' || inputs.mode == 'all') &&
-      vars.IMDB_PROFILE_PUBLISH_ENABLED == 'true')
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -91,7 +58,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Publish approved rows
-        run: npm run profile:publish -- --apply --max-rows=${{ inputs.max_rows || '10' }}
+        run: npm run profile:publish -- --apply --max-rows=${{ inputs.max_rows || '1' }}
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
           GOOGLE_WORKFLOW_SPREADSHEET_ID: ${{ secrets.GOOGLE_WORKFLOW_SPREADSHEET_ID }}
@@ -100,4 +67,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PROFILE_WORKFLOW_REQUEST_ID: ${{ inputs.request_id }}
-          PROFILE_WORKFLOW_REQUIRE_REQUEST_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' }}
+          PROFILE_WORKFLOW_REQUIRE_REQUEST_ID: "true"
